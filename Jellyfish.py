@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import scipy.signal
 import time
 
 
@@ -122,12 +123,12 @@ SpinB = spinCls(0.5,3.69,42.576e6,True)
 SpinList = [SpinA,SpinA,SpinA,SpinB,SpinB]
 Jmatrix = np.zeros((len(SpinList),len(SpinList)))
 
-Jmatrix[0,3] = 7 
-Jmatrix[0,4] = 7 
-Jmatrix[1,3] = 7 
-Jmatrix[1,4] = 7 
-Jmatrix[2,3] = 7 
-Jmatrix[2,4] = 7
+Jmatrix[0,3] = 20 
+Jmatrix[0,4] = 20 
+Jmatrix[1,3] = 20 
+Jmatrix[1,4] = 20 
+Jmatrix[2,3] = 20 
+Jmatrix[2,4] = 20
 
 SpinSystem = spinSystemCls(SpinList, Jmatrix, B0,True)
 
@@ -139,6 +140,7 @@ SpinSystem = spinSystemCls(SpinList, Jmatrix, B0,True)
 
 #Settings========
 dw = 10e-4
+sw = 1.0/dw
 points = 1024*16
 process =1024*32
 axis = np.linspace(0,points-1,points) * dw
@@ -149,9 +151,8 @@ RhoZero = SpinSystem.RhoZero
 Htot = SpinSystem.Htot
 Detect = SpinSystem.DetectOp
 #Diagonalize========
-b  = time.time()
 Hdiag,T = np.linalg.eigh(Htot)
-print(time.time() - b)
+
 
 PropL = T @ np.diag(np.exp(-1j*2*np.pi*Hdiag*dw)) @  np.linalg.inv(T)
 PropR = np.conj(PropL)
@@ -174,3 +175,45 @@ plt.figure()
 plt.plot(freqaxis,Spectrum)
 plt.gca().invert_xaxis()
 plt.show()  
+
+
+
+#New Method===========================================
+RhoProp = np.linalg.inv(T) @ RhoZero @ T
+RhoProp =  np.triu(RhoProp,1)
+
+Intensities = []
+Frequencies = []
+for iii in range(RhoProp.shape[0]):
+    for jjj in range(RhoProp.shape[0]):
+        if abs(RhoProp[iii,jjj]) > 1e-4:
+            temp = np.zeros_like(RhoProp)
+            temp[iii,jjj] = RhoProp[iii,jjj] * -1j
+            temp[jjj,iii] = RhoProp[iii,jjj] * 1j
+            sig = np.imag(T @ temp @ np.linalg.inv(T))
+            Intensities.append(np.sum(np.sum(np.real(sig * Detect))))
+            Frequencies.append(Hdiag[jjj] - Hdiag[iii])
+            
+Spectrum, Axis = np.histogram(Frequencies, process, (-sw/2.0, sw/2.0) , weights = Intensities)
+Fid = np.fft.ifft(np.fft.ifftshift(np.conj(scipy.signal.hilbert(Spectrum))))
+TimeAxis = np.linspace(0,process-1,process) * dw
+Fid = Fid * np.exp(-TimeAxis * lb)
+
+Spectrum = np.fft.fftshift(np.fft.fft(Fid))
+
+Axis = Axis[0:-1] / (42.576 * B0)
+print(time.time() - a)
+
+plt.figure()
+plt.plot(Axis,Spectrum)
+plt.gca().invert_xaxis()
+plt.show()  
+
+
+
+
+
+
+
+
+
