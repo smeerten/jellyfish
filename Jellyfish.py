@@ -115,23 +115,38 @@ class spinSystemCls:
                RhoZero =  RhoZero + self.SpinOperators['Ix'][index]
         return RhoZero
 
-a = time.time()
+temp = time.time()
 B0 = 2.10 #Tesla
 SpinA = spinCls(0.5,1.23,42.576e6,True)
 SpinB = spinCls(0.5,3.69,42.576e6,True)
 
-SpinList = [SpinA,SpinA,SpinA,SpinB,SpinB]
+SpinList = [SpinA,SpinA,SpinA,SpinB,SpinB,SpinB,SpinB,SpinB,SpinB,SpinB]
 Jmatrix = np.zeros((len(SpinList),len(SpinList)))
 
-Jmatrix[0,3] = 20 
-Jmatrix[0,4] = 20 
-Jmatrix[1,3] = 20 
-Jmatrix[1,4] = 20 
-Jmatrix[2,3] = 20 
-Jmatrix[2,4] = 20
+Jmatrix[0,3] = 7 
+Jmatrix[0,4] = 7 
+Jmatrix[0,5] = 7 
+Jmatrix[0,6] = 7 
+Jmatrix[0,7] = 7 
+Jmatrix[0,8] = 7 
+Jmatrix[0,9] = 7
+Jmatrix[1,3] = 7 
+Jmatrix[1,4] = 7 
+Jmatrix[1,5] = 7 
+Jmatrix[1,6] = 7 
+Jmatrix[1,7] = 7 
+Jmatrix[1,8] = 7 
+Jmatrix[1,9] = 7
+Jmatrix[2,3] = 7 
+Jmatrix[2,4] = 7
+Jmatrix[2,5] = 7 
+Jmatrix[2,6] = 7 
+Jmatrix[2,7] = 7 
+Jmatrix[2,8] = 7
+Jmatrix[2,9] = 7 
 
 SpinSystem = spinSystemCls(SpinList, Jmatrix, B0,True)
-
+print('Spin System = ' + str(time.time() - temp) + ' s')
 
 
     
@@ -141,8 +156,8 @@ SpinSystem = spinSystemCls(SpinList, Jmatrix, B0,True)
 #Settings========
 dw = 10e-4
 sw = 1.0/dw
-points = 1024*16
-process =1024*32
+points = 1024*32
+process = 1024*128
 axis = np.linspace(0,points-1,points) * dw
 lb = 1 #Hz
 freqaxis =  np.fft.fftshift(np.fft.fftfreq(process, d=dw))/(42.576 * B0)
@@ -151,64 +166,77 @@ RhoZero = SpinSystem.RhoZero
 Htot = SpinSystem.Htot
 Detect = SpinSystem.DetectOp
 #Diagonalize========
+temp = time.time()
 Hdiag,T = np.linalg.eigh(Htot)
+Tinv = np.linalg.inv(T)
+print('Diag = ' + str(time.time() - temp) + ' s')
 
-
-PropL = T @ np.diag(np.exp(-1j*2*np.pi*Hdiag*dw)) @  np.linalg.inv(T)
-PropR = np.conj(PropL)
-print(time.time() - a)
-
-#Simulate
-res = []
-Rho = RhoZero
-for iii in range(points):
-    res.append(np.trace(Rho @ Detect))
-    Rho = PropL @ Rho @ PropR
-
-
-# Process=========  
-res = np.array(res) * np.exp(-axis * lb)
-Spectrum = np.real(np.fft.fftshift(np.fft.fft(res,process)))
-
-print(time.time() - a)
-plt.figure()
-plt.plot(freqaxis,Spectrum)
-plt.gca().invert_xaxis()
-plt.show()  
+#PropL = T @ np.diag(np.exp(-1j*2*np.pi*Hdiag*dw)) @  np.linalg.inv(T)
+#PropR = np.conj(PropL)
+#print(time.time() - a)
+#
+##Simulate
+#res = []
+#Rho = RhoZero
+#for iii in range(points):
+#    res.append(np.trace(Rho @ Detect))
+#    Rho = PropL @ Rho @ PropR
+#
+#
+## Process=========  
+#res[0] = res[0]/2
+#res = np.array(res) * np.exp(-axis * lb)
+#Spectrum = np.real(np.fft.fftshift(np.fft.fft(res,process)))
+#Spectrum = Spectrum /np.max(Spectrum)
+#print(time.time() - a)
+#plt.figure()
+#plt.plot(freqaxis,Spectrum)
+#plt.gca().invert_xaxis()
+#plt.show()  
 
 
 
 #New Method===========================================
-RhoProp = np.linalg.inv(T) @ RhoZero @ T
-RhoProp =  np.triu(RhoProp,1)
+temptime = time.time()
+RhoProp = Tinv @ RhoZero @ T
+RhoProp =  np.tril(RhoProp,1)
+
+DetectProp = np.real(Tinv @ Detect @ T)
 
 Intensities = []
 Frequencies = []
+numtrans = 0 
+
+AllInts = np.real(DetectProp * RhoProp)
 for iii in range(RhoProp.shape[0]):
     for jjj in range(RhoProp.shape[0]):
-        if abs(RhoProp[iii,jjj]) > 1e-4:
-            temp = np.zeros_like(RhoProp)
-            temp[iii,jjj] = RhoProp[iii,jjj] * -1j
-            temp[jjj,iii] = RhoProp[iii,jjj] * 1j
-            sig = np.imag(T @ temp @ np.linalg.inv(T))
-            Intensities.append(np.sum(np.sum(np.real(sig * Detect))))
-            Frequencies.append(Hdiag[jjj] - Hdiag[iii])
-            
-Spectrum, Axis = np.histogram(Frequencies, process, (-sw/2.0, sw/2.0) , weights = Intensities)
-Fid = np.fft.ifft(np.fft.ifftshift(np.conj(scipy.signal.hilbert(Spectrum))))
+        if abs(RhoProp[iii,jjj]) > 1e-9:
+            Intensities.append(AllInts[iii,jjj])
+            Frequencies.append(Hdiag[iii] - Hdiag[jjj])
+            numtrans += 1
+
+print('Get intensities = ' + str(time.time() - temptime) + ' s')   
+         
+Spectrum2, Axis = np.histogram(Frequencies, process, (-sw/2.0, sw/2.0) , weights = Intensities)
+Fid = np.fft.ifft(np.fft.ifftshift(np.conj(scipy.signal.hilbert(Spectrum2))))
 TimeAxis = np.linspace(0,process-1,process) * dw
 Fid = Fid * np.exp(-TimeAxis * lb)
 
-Spectrum = np.fft.fftshift(np.fft.fft(Fid))
+Spectrum2 = np.real(np.fft.fftshift(np.fft.fft(Fid)))
+Spectrum2 = Spectrum2 / np.max(Spectrum2)
 
-Axis = Axis[0:-1] / (42.576 * B0)
-print(time.time() - a)
+Axis = (Axis[1:] + 0.5 * (Axis[0] - Axis[1]))  / (42.576 * B0)
+
 
 plt.figure()
-plt.plot(Axis,Spectrum)
+plt.plot(Axis,Spectrum2)
+#plt.plot(freqaxis,Spectrum)
 plt.gca().invert_xaxis()
 plt.show()  
 
+print(numtrans)
+print(((RhoProp.shape[0]**2)/2 -RhoProp.shape[0]) )
+print(numtrans/((RhoProp.shape[0]**2)/2 -RhoProp.shape[0]) *100 )
 
 
 
