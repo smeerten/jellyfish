@@ -40,7 +40,7 @@ isoList = isoList[1:]
 N = len(isoList)
 #nameList = []
 #fullNameList = []
-abbrevList = []
+ABBREVLIST = []
 atomNumList = np.zeros(N)
 atomMassList = np.zeros(N)
 spinList = np.zeros(N)
@@ -55,7 +55,7 @@ for i in range(N):
 #        nameList = np.append(nameList, isoN[1])
 #        fullNameList = np.append(fullNameList, isoN[2])
         atomMassList[i] = int(isoN[3])
-        abbrevList.append( str(int(atomMassList[i])) + isoN[1])
+        ABBREVLIST.append( str(int(atomMassList[i])) + isoN[1])
         spinList[i] = isoN[4]
         if isoN[5] == '-':
             abundanceList[i] = 0
@@ -71,7 +71,7 @@ for i in range(N):
 
 class spinCls:
     def __init__(self, Nucleus, shift, Detect):
-        self.index = abbrevList.index(Nucleus)
+        self.index = ABBREVLIST.index(Nucleus)
         self.I = spinList[self.index]
         self.Gamma = freqRatioList[self.index] * GAMMASCALE * 1e6
         self.shift = shift
@@ -181,7 +181,7 @@ class spinSystemCls:
 
 
 def MakeSpectrum(SpinSystem,RefNucleus,B0,AxisLimits,LineBroadening,NumPoints):
-    index = abbrevList.index(RefNucleus)
+    index = ABBREVLIST.index(RefNucleus)
     RefFreq = freqRatioList[index] * GAMMASCALE * 1e6 * B0
     
     
@@ -229,7 +229,7 @@ def MakeSpectrum(SpinSystem,RefNucleus,B0,AxisLimits,LineBroadening,NumPoints):
 
     Axis = (Axis[1:] + 0.5 * (Axis[0] - Axis[1]))  / (RefFreq * 1e-6)
     
-    return Spectrum, Axis
+    return Spectrum, Axis, RefFreq
     
 
 
@@ -289,48 +289,67 @@ class SettingsFrame(QtWidgets.QWidget):
         self.B0Setting = QtWidgets.QLineEdit(self)
         self.B0Setting.setAlignment(QtCore.Qt.AlignHCenter)
         self.B0Setting.setText(str(self.father.B0))
-        self.B0Setting.returnPressed.connect(self.ReadSettings)
+        self.B0Setting.returnPressed.connect(self.ApplySettings)
         grid.addWidget(self.B0Setting, 0, 1)
         
-        grid.addWidget(QtWidgets.QLabel("Line Width [Hz]:"), 1, 0,QtCore.Qt.AlignHCenter)
+        self.LbType = QtWidgets.QComboBox()
+        self.LbType.addItems(['Line Width [Hz]:','Line Width [ppm]:'])
+        self.LbType.currentIndexChanged.connect(self.ChangeLbSetting)
+        grid.addWidget(self.LbType, 1, 0)
         self.LbSetting = QtWidgets.QLineEdit(self)
         self.LbSetting.setAlignment(QtCore.Qt.AlignHCenter)
         self.LbSetting.setText(str(self.father.Lb))
-        self.LbSetting.returnPressed.connect(self.ReadSettings)
+        self.LbSetting.returnPressed.connect(self.ApplySettings)
         grid.addWidget(self.LbSetting, 1, 1)
         
-        grid.addWidget(QtWidgets.QLabel("# Points [x1024]"), 0, 2,QtCore.Qt.AlignHCenter)
+        grid.addWidget(QtWidgets.QLabel("# Points [x1024]:"), 0, 2,QtCore.Qt.AlignHCenter)
         self.NumPointsSetting = QtWidgets.QLineEdit(self)
         self.NumPointsSetting.setAlignment(QtCore.Qt.AlignHCenter)
         self.NumPointsSetting.setText(str(self.father.NumPoints/1024))
-        self.NumPointsSetting.returnPressed.connect(self.ReadSettings)
+        self.NumPointsSetting.returnPressed.connect(self.ApplySettings)
         grid.addWidget(self.NumPointsSetting, 0, 3)
            
-        grid.addWidget(QtWidgets.QLabel("Ref Nucleus"), 1, 2,QtCore.Qt.AlignHCenter)
+        grid.addWidget(QtWidgets.QLabel("Ref Nucleus:"), 1, 2,QtCore.Qt.AlignHCenter)
+        self.RefNucleusSettings = QtWidgets.QComboBox()
+        self.RefNucleusSettings.addItems(ABBREVLIST)
+        self.RefNucleusSettings.setCurrentIndex(0)
+        self.RefNucleusSettings.currentIndexChanged.connect(self.ApplySettings)
+        grid.addWidget(self.RefNucleusSettings, 1, 3)
         
         
-        
-        grid.addWidget(QtWidgets.QLabel("x Min [ppm]"), 0, 4,QtCore.Qt.AlignHCenter)
+        grid.addWidget(QtWidgets.QLabel("x Min [ppm]:"), 0, 4,QtCore.Qt.AlignHCenter)
         self.XminSetting = QtWidgets.QLineEdit(self)
         self.XminSetting.setAlignment(QtCore.Qt.AlignHCenter)
         self.XminSetting.setText(str(self.father.Limits[0]))
-        self.XminSetting.returnPressed.connect(lambda: self.ReadSettings(True))
+        self.XminSetting.returnPressed.connect(lambda: self.ApplySettings(True))
         grid.addWidget(self.XminSetting, 0, 5)
         
-        grid.addWidget(QtWidgets.QLabel("x Max [ppm]"), 1, 4,QtCore.Qt.AlignHCenter)
+        grid.addWidget(QtWidgets.QLabel("x Max [ppm]:"), 1, 4,QtCore.Qt.AlignHCenter)
         self.XmaxSetting = QtWidgets.QLineEdit(self)
         self.XmaxSetting.setAlignment(QtCore.Qt.AlignHCenter)
         self.XmaxSetting.setText(str(self.father.Limits[1]))
-        self.XmaxSetting.returnPressed.connect(lambda: self.ReadSettings(True))
+        self.XmaxSetting.returnPressed.connect(lambda: self.ApplySettings(True))
         grid.addWidget(self.XmaxSetting, 1, 5)
         
         grid.setColumnStretch(10, 1)
         grid.setRowStretch(10, 1)
-
-    def ReadSettings(self,ResetAxis = False):
+    
+    def ChangeLbSetting(self):
+        if self.LbType.currentIndex() == 0: #From ppm
+            self.LbSetting.setText(str(safeEval(self.LbSetting.text()) * (self.father.RefFreq * 1e-6)))
+        else:
+            self.LbSetting.setText(str(safeEval(self.LbSetting.text()) / (self.father.RefFreq * 1e-6)))
+        
+        
+        
+    def ApplySettings(self,ResetAxis = False):
         self.father.B0 = safeEval(self.B0Setting.text())
-        self.father.Lb = safeEval(self.LbSetting.text())
+        if self.LbType.currentIndex() == 0:
+            self.father.Lb = safeEval(self.LbSetting.text())
+        else:
+            self.father.Lb = safeEval(self.LbSetting.text()) * (self.father.RefFreq * 1e-6)
         self.father.NumPoints = safeEval(self.NumPointsSetting.text()) * 1024
+        self.father.RefNucleus = ABBREVLIST[self.RefNucleusSettings.currentIndex()]
         self.father.Limits[0] = safeEval(self.XminSetting.text())
         self.father.Limits[1] = safeEval(self.XmaxSetting.text())
         self.father.sim(ResetAxis)
@@ -358,7 +377,8 @@ class MainProgram(QtWidgets.QMainWindow):
         self.Lb = 1 #Hz
         self.NumPoints = 1024*32
         self.Limits = np.array([0,8]) #ppm
-        self.RefNucleus = '1H' #Mhz
+        self.RefNucleus = '1H'
+        self.RefFreq = 0
         SpinA = spinCls('1H',1.23,True)
         SpinB = spinCls('1H',3.69,True)
         self.SpinList = [SpinA,SpinA,SpinA,SpinB,SpinB]
@@ -407,7 +427,7 @@ class MainProgram(QtWidgets.QMainWindow):
     
     def sim(self,ResetAxis = False):
         self.SpinSystem = spinSystemCls(self.SpinList, self.Jmatrix, self.B0,self.StrongCoupling)
-        self.Spectrum, self.Axis = MakeSpectrum(self.SpinSystem,self.RefNucleus,self.B0,self.Limits,self.Lb,self.NumPoints)
+        self.Spectrum, self.Axis, self.RefFreq = MakeSpectrum(self.SpinSystem,self.RefNucleus,self.B0,self.Limits,self.Lb,self.NumPoints)
         self.PlotFrame.setData(self.Axis, self.Spectrum)
         if ResetAxis:
             self.PlotFrame.plotReset(xReset=True,yReset = False)
