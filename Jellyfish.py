@@ -65,7 +65,6 @@ class spinSystemCls:
                IList.append(Operator(self.SpinList[spin]))
            else:
                IList.append(self.SpinList[spin].Ident)
-            
        Matrix = self.kronList(IList)
        return Matrix
        
@@ -79,7 +78,7 @@ class spinSystemCls:
     def MakeShiftHamil(self):
         Shift = np.zeros((self.MatrixSize,self.MatrixSize))
         for index in range(len(SpinList)):
-            Shift = Shift + SpinList[index].shift * 1e-6 * SpinList[index].Gamma * self.B0 * self.SpinOperators['Iz'][index]
+            Shift = Shift + (SpinList[index].shift * 1e-6 + 1) * SpinList[index].Gamma * self.B0 * self.SpinOperators['Iz'][index]
         return Shift
         
     def MakeJhamiltonian(self):
@@ -90,8 +89,7 @@ class spinSystemCls:
             OperatorsFunctions = {'Iz': lambda Spin: Spin.Iz}
         Jham = np.zeros((self.MatrixSize,self.MatrixSize))
         for spin in range(len(self.SpinList)):
-            for subspin in range(len(self.SpinList)):
-                if subspin > spin:
+            for subspin in range(spin,len(self.SpinList)):
                     if Jmatrix[spin,subspin] != 0:
                         temp = np.zeros((self.MatrixSize,self.MatrixSize),dtype=complex)
                         for operator in OperatorsFunctions.keys():
@@ -120,30 +118,30 @@ B0 = 2.10 #Tesla
 SpinA = spinCls(0.5,1.23,42.576e6,True)
 SpinB = spinCls(0.5,3.69,42.576e6,True)
 
-SpinList = [SpinA,SpinA,SpinA,SpinB,SpinB,SpinB,SpinB,SpinB,SpinB,SpinB]
+SpinList = [SpinA,SpinA,SpinA,SpinB,SpinB]
 Jmatrix = np.zeros((len(SpinList),len(SpinList)))
 
 Jmatrix[0,3] = 7 
 Jmatrix[0,4] = 7 
-Jmatrix[0,5] = 7 
-Jmatrix[0,6] = 7 
-Jmatrix[0,7] = 7 
-Jmatrix[0,8] = 7 
-Jmatrix[0,9] = 7
+#Jmatrix[0,5] = 7 
+#Jmatrix[0,6] = 7 
+#Jmatrix[0,7] = 7 
+#Jmatrix[0,8] = 7 
+#Jmatrix[0,9] = 7
 Jmatrix[1,3] = 7 
 Jmatrix[1,4] = 7 
-Jmatrix[1,5] = 7 
-Jmatrix[1,6] = 7 
-Jmatrix[1,7] = 7 
-Jmatrix[1,8] = 7 
-Jmatrix[1,9] = 7
+#Jmatrix[1,5] = 7 
+#Jmatrix[1,6] = 7 
+#Jmatrix[1,7] = 7 
+#Jmatrix[1,8] = 7 
+#Jmatrix[1,9] = 7
 Jmatrix[2,3] = 7 
 Jmatrix[2,4] = 7
-Jmatrix[2,5] = 7 
-Jmatrix[2,6] = 7 
-Jmatrix[2,7] = 7 
-Jmatrix[2,8] = 7
-Jmatrix[2,9] = 7 
+#Jmatrix[2,5] = 7 
+#Jmatrix[2,6] = 7 
+#Jmatrix[2,7] = 7 
+#Jmatrix[2,8] = 7
+#Jmatrix[2,9] = 7 
 
 SpinSystem = spinSystemCls(SpinList, Jmatrix, B0,True)
 print('Spin System = ' + str(time.time() - temp) + ' s')
@@ -154,13 +152,21 @@ print('Spin System = ' + str(time.time() - temp) + ' s')
 
 
 #Settings========
-dw = 10e-4
-sw = 1.0/dw
-points = 1024*32
-process = 1024*128
-axis = np.linspace(0,points-1,points) * dw
+
+Limits = np.array([-1,11]) #ppm
+Freq = 42.576 * B0 #Mhz
 lb = 1 #Hz
-freqaxis =  np.fft.fftshift(np.fft.fftfreq(process, d=dw))/(42.576 * B0)
+process = 1024*32
+
+
+Limits = tuple(Limits * Freq)
+sw = Limits[1] - Limits[0]
+dw = 1.0/ sw
+
+
+
+
+
 
 RhoZero = SpinSystem.RhoZero
 Htot = SpinSystem.Htot
@@ -171,6 +177,9 @@ Hdiag,T = np.linalg.eigh(Htot)
 Tinv = np.linalg.inv(T)
 print('Diag = ' + str(time.time() - temp) + ' s')
 
+#axis = np.linspace(0,points-1,points) * dw
+#freqaxis =  np.fft.fftshift(np.fft.fftfreq(process, d=dw))/(42.576 * B0)
+#points = 1024*32
 #PropL = T @ np.diag(np.exp(-1j*2*np.pi*Hdiag*dw)) @  np.linalg.inv(T)
 #PropR = np.conj(PropL)
 #print(time.time() - a)
@@ -202,22 +211,24 @@ RhoProp = Tinv @ RhoZero @ T
 RhoProp =  np.tril(RhoProp,1)
 
 DetectProp = np.real(Tinv @ Detect @ T)
-
+AllInts = np.real(DetectProp * RhoProp)
+print('Transform = ' + str(time.time() - temptime) + ' s')   
 Intensities = []
 Frequencies = []
-numtrans = 0 
 
-AllInts = np.real(DetectProp * RhoProp)
+
 for iii in range(RhoProp.shape[0]):
-    for jjj in range(RhoProp.shape[0]):
+    for jjj in range(iii):
         if abs(RhoProp[iii,jjj]) > 1e-9:
             Intensities.append(AllInts[iii,jjj])
-            Frequencies.append(Hdiag[iii] - Hdiag[jjj])
-            numtrans += 1
+            Frequencies.append(Hdiag[iii] - Hdiag[jjj] - Freq * 1e6)
 
-print('Get intensities = ' + str(time.time() - temptime) + ' s')   
-         
-Spectrum2, Axis = np.histogram(Frequencies, process, (-sw/2.0, sw/2.0) , weights = Intensities)
+
+
+
+
+temptime = time.time()         
+Spectrum2, Axis = np.histogram(Frequencies, process, Limits , weights = Intensities)
 Fid = np.fft.ifft(np.fft.ifftshift(np.conj(scipy.signal.hilbert(Spectrum2))))
 TimeAxis = np.linspace(0,process-1,process) * dw
 Fid = Fid * np.exp(-TimeAxis * lb)
@@ -225,18 +236,15 @@ Fid = Fid * np.exp(-TimeAxis * lb)
 Spectrum2 = np.real(np.fft.fftshift(np.fft.fft(Fid)))
 Spectrum2 = Spectrum2 / np.max(Spectrum2)
 
-Axis = (Axis[1:] + 0.5 * (Axis[0] - Axis[1]))  / (42.576 * B0)
+Axis = (Axis[1:] + 0.5 * (Axis[0] - Axis[1]))  / Freq
+
 
 
 plt.figure()
 plt.plot(Axis,Spectrum2)
-#plt.plot(freqaxis,Spectrum)
 plt.gca().invert_xaxis()
 plt.show()  
 
-print(numtrans)
-print(((RhoProp.shape[0]**2)/2 -RhoProp.shape[0]) )
-print(numtrans/((RhoProp.shape[0]**2)/2 -RhoProp.shape[0]) *100 )
 
 
 
