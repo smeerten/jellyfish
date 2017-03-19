@@ -20,6 +20,7 @@
 import numpy as np
 import matplotlib.gridspec as gridspec
 try:
+    import bla
     from PyQt4 import QtGui, QtCore
     from PyQt4 import QtGui as QtWidgets    
 except ImportError:

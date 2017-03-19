@@ -6,6 +6,7 @@ import sip
 import sys
 sip.setapi('QString', 2)
 try:
+    import bla
     from PyQt4 import QtGui, QtCore
     from PyQt4 import QtGui as QtWidgets
     QT = 4
@@ -180,17 +181,11 @@ class spinSystemCls:
 
 
 
-def MakeSpectrum(SpinSystem,RefNucleus,B0,AxisLimits,LineBroadening,NumPoints):
-    index = ABBREVLIST.index(RefNucleus)
-    RefFreq = freqRatioList[index] * GAMMASCALE * 1e6 * B0
-    
-    
-    
+def MakeSpectrum(SpinSystem,RefFreq,B0,AxisLimits,LineBroadening,NumPoints):
     Limits = tuple(AxisLimits * RefFreq * 1e-6)
     sw = Limits[1] - Limits[0]
     dw = 1.0/ sw
     lb = LineBroadening
-    
     
     #Make propagators
     Hdiag,T = np.linalg.eigh(SpinSystem.Htot)
@@ -344,19 +339,188 @@ class SettingsFrame(QtWidgets.QWidget):
         
     def ApplySettings(self,ResetAxis = False):
         self.father.B0 = safeEval(self.B0Setting.text())
+        self.father.RefNucleus = ABBREVLIST[self.RefNucleusSettings.currentIndex()]
+        self.father.SetRefFreq()
         if self.LbType.currentIndex() == 0:
             self.father.Lb = safeEval(self.LbSetting.text())
         else:
             self.father.Lb = safeEval(self.LbSetting.text()) * (self.father.RefFreq * 1e-6)
         self.father.NumPoints = safeEval(self.NumPointsSetting.text()) * 1024
-        self.father.RefNucleus = ABBREVLIST[self.RefNucleusSettings.currentIndex()]
-        self.father.Limits[0] = safeEval(self.XminSetting.text())
-        self.father.Limits[1] = safeEval(self.XmaxSetting.text())
+        
+        self.father.Limits[0] = float(self.XminSetting.text())
+        self.father.Limits[1] = float(self.XmaxSetting.text())
         self.father.sim(ResetAxis)
 
 
 
+class SpinsysFrame(QtWidgets.QWidget):
 
+    def __init__(self, parent):
+        super(SpinsysFrame, self).__init__(parent)
+        self.father = parent
+        self.grid = QtWidgets.QGridLayout(self)
+        self.grid.addWidget(QtWidgets.QLabel("Spin System:"), 0, 0,1,5,QtCore.Qt.AlignHCenter)
+
+        self.addButton = QtWidgets.QPushButton("Add isotope")
+        self.addButton.clicked.connect(self.addIsotopeManager)
+
+        self.grid.addWidget(self.addButton,1,0,1,5)
+        
+        self.setJButton = QtWidgets.QPushButton("Set J-couplings")
+        self.setJButton.clicked.connect(self.setJManager)
+        self.grid.addWidget(self.setJButton,2,0,1,5)
+
+        self.grid.addWidget(QtWidgets.QLabel("#:"), 5, 0,QtCore.Qt.AlignHCenter)
+        self.grid.addWidget(QtWidgets.QLabel("Type:"), 5, 1,QtCore.Qt.AlignHCenter)
+        self.grid.addWidget(QtWidgets.QLabel("Shift:"), 5, 2,QtCore.Qt.AlignHCenter)
+        self.grid.addWidget(QtWidgets.QLabel("Multiplicity:"), 5, 3,QtCore.Qt.AlignHCenter)
+        self.grid.addWidget(QtWidgets.QLabel("Remove:"), 5, 4,QtCore.Qt.AlignHCenter)
+        self.spinSysWidgets = {'Number':[],'Isotope':[], 'Shift':[], 'Multi':[]}
+        self.Nspins = 0
+        self.grid.setColumnStretch(10, 1)
+        self.grid.setRowStretch(10, 1)
+        
+        self.addSpin('1H',1.23,1)
+        self.addSpin('13C',10.2,4)
+        
+    def addSpin(self,Isotope,Shift,Multiplicity):
+        self.Nspins += 1
+        self.spinSysWidgets['Number'].append(QtWidgets.QLabel(str(self.Nspins)))
+        self.spinSysWidgets['Isotope'].append(QtWidgets.QLabel(Isotope))
+        
+        self.grid.addWidget(self.spinSysWidgets['Isotope'][-1],5 + self.Nspins,1)
+        self.grid.addWidget(self.spinSysWidgets['Number'][-1],5 + self.Nspins,0)
+        
+        
+        self.spinSysWidgets['Shift'].append(QtWidgets.QLineEdit())
+        self.spinSysWidgets['Shift'][-1].setText(str(Shift))
+        self.spinSysWidgets['Shift'][-1].returnPressed.connect(self.parseSpinSys)
+        self.grid.addWidget(self.spinSysWidgets['Shift'][-1],5 + self.Nspins,2)
+        self.spinSysWidgets['Multi'].append(QtWidgets.QSpinBox())
+        self.spinSysWidgets['Multi'][-1].setValue(Multiplicity)
+        self.spinSysWidgets['Multi'][-1].setMinimum(1)
+        self.grid.addWidget(self.spinSysWidgets['Multi'][-1],5 + self.Nspins,3)
+        
+        self.parseSpinSys(True)
+     
+        
+    def setJManager(self):
+        dialog = setJWindow(self)
+        if dialog.exec_():
+            if dialog.closed:
+                return
+            else:
+                pass
+#                self.addSpin(dialog.Isotope,dialog.Shift,dialog.Multi)
+                
+    def addIsotopeManager(self):
+        dialog = addIsotopeWindow(self)
+        if dialog.exec_():
+            if dialog.closed:
+                return
+            else:
+                self.addSpin(dialog.Isotope,dialog.Shift,dialog.Multi)
+
+                
+    def parseSpinSys(self,ResetAxis = False):
+        self.father.SpinList = []
+        NSpins = len(self.spinSysWidgets['Isotope'])
+        
+        for Spin in range(NSpins):
+            self.father.SpinList.append(spinCls(self.spinSysWidgets['Isotope'][Spin].text(),safeEval(self.spinSysWidgets['Shift'][Spin].text()),True))
+        
+        self.father.Jmatrix = np.zeros((NSpins,NSpins))
+        
+        self.father.sim(ResetAxis,ResetAxis)
+            
+    def drawSpinSys(self):
+        for Spin in range(self.spinSystem['Isotope']):
+            self.spinSysWidgets['Isotope']
+        
+class addIsotopeWindow(QtWidgets.QDialog):
+    def __init__(self, parent):
+        QtWidgets.QWidget.__init__(self, parent)
+        self.setWindowFlags(QtCore.Qt.Window | QtCore.Qt.Tool)
+        self.father = parent
+        self.Isotope = ''
+        self.Shift = 0
+        self.Multi = 0
+        self.closed = False
+        self.setWindowTitle("Add Isotope")
+        grid = QtWidgets.QGridLayout(self)
+        grid.addWidget(QtWidgets.QLabel("Type:"), 0, 0,QtCore.Qt.AlignHCenter)
+        grid.addWidget(QtWidgets.QLabel("Shift [ppm]:"), 0, 1,QtCore.Qt.AlignHCenter)
+        grid.addWidget(QtWidgets.QLabel("Multiplicity:"), 0, 2,QtCore.Qt.AlignHCenter)
+        
+        self.typeSetting = QtWidgets.QComboBox()
+        self.typeSetting.addItems(ABBREVLIST)
+        self.typeSetting.setCurrentIndex(0)
+        grid.addWidget(self.typeSetting,1,0)
+        
+        self.shiftSetting = QtWidgets.QLineEdit()
+        self.shiftSetting.setText(str(0))
+        grid.addWidget(self.shiftSetting,1,1)
+        
+        self.multiSettings = QtWidgets.QSpinBox()
+        self.multiSettings.setValue(1)
+        self.multiSettings.setMinimum(1)
+        grid.addWidget(self.multiSettings,1,2)
+        
+        cancelButton = QtWidgets.QPushButton("&Cancel")
+        cancelButton.clicked.connect(self.closeEvent)
+        grid.addWidget(cancelButton, 13, 0)
+        okButton = QtWidgets.QPushButton("&Ok")
+        okButton.clicked.connect(self.applyAndClose)
+        grid.addWidget(okButton, 13, 2)
+        
+        self.show()
+        self.setFixedSize(self.size())
+        
+    def closeEvent(self, *args):
+        self.closed = True
+        self.accept()
+        self.deleteLater()
+
+    def applyAndClose(self):
+        self.Isotope = ABBREVLIST[self.typeSetting.currentIndex()]
+        self.Shift = safeEval(self.shiftSetting.text())
+        self.Multi = self.multiSettings.value()
+        
+        self.accept()
+        self.deleteLater()
+
+class setJWindow(QtWidgets.QDialog):
+    def __init__(self, parent, Jmatrix, numSpins):
+        QtWidgets.QWidget.__init__(self, parent)
+        self.setWindowFlags(QtCore.Qt.Window | QtCore.Qt.Tool)
+        self.father = parent
+        self.closed = False
+        self.Jmatrix = Jmatrix
+        self.numSpins = numSpins
+        grid = QtWidgets.QGridLayout(self)
+        cancelButton = QtWidgets.QPushButton("&Cancel")
+        cancelButton.clicked.connect(self.closeEvent)
+        grid.addWidget(cancelButton, 13, 0)
+        okButton = QtWidgets.QPushButton("&Ok")
+        okButton.clicked.connect(self.applyAndClose)
+        grid.addWidget(okButton, 13, 2)
+        
+        self.show()
+        self.setFixedSize(self.size())
+        
+    def closeEvent(self, *args):
+        self.closed = True
+        self.accept()
+        self.deleteLater()
+
+    def applyAndClose(self):
+#        self.Isotope = ABBREVLIST[self.typeSetting.currentIndex()]
+#        self.Shift = safeEval(self.shiftSetting.text())
+#        self.Multi = self.multiSettings.value()
+        
+        self.accept()
+        self.deleteLater()
+        
 class MainProgram(QtWidgets.QMainWindow):
 
     def __init__(self, root):
@@ -376,61 +540,39 @@ class MainProgram(QtWidgets.QMainWindow):
         self.B0 = 14.1 #Tesla
         self.Lb = 1 #Hz
         self.NumPoints = 1024*32
-        self.Limits = np.array([0,8]) #ppm
+        self.Limits = np.array([0.0,8.0]) #ppm
         self.RefNucleus = '1H'
         self.RefFreq = 0
-        SpinA = spinCls('1H',1.23,True)
-        SpinB = spinCls('1H',3.69,True)
-        self.SpinList = [SpinA,SpinA,SpinA,SpinB,SpinB]
-        
-        
+        self.SetRefFreq()
+        self.Jmatrix = None
+        self.StrongCoupling = True
+        self.SpinList = []
+        self.Jmatrix = np.zeros((len(self.SpinList),len(self.SpinList)))
+        self.PlotFrame = PlotFrame(self, self.fig, self.canvas)
         self.settingsFrame = SettingsFrame(self)
         self.mainFrame.addWidget(self.settingsFrame, 1, 0)
-        
-        
-        
-        
-        
-        self.StrongCoupling = True
-        
-        #Make SpinSys
+        self.spinsysFrame = SpinsysFrame(self)
+        self.mainFrame.addWidget(self.spinsysFrame, 0, 1,2,1)
+     
 
         
         
-        Jmatrix = np.zeros((len(self.SpinList),len(self.SpinList)))
-        
-        Jmatrix[0,3] = 7 
-        Jmatrix[0,4] = 7 
-        #Jmatrix[0,5] = 7 
-        #Jmatrix[0,6] = 7 
-        #Jmatrix[0,7] = 7 
-        #Jmatrix[0,8] = 7 
-        #Jmatrix[0,9] = 7
-        Jmatrix[1,3] = 7 
-        Jmatrix[1,4] = 7 
-        #Jmatrix[1,5] = 7 
-        #Jmatrix[1,6] = 7 
-        #Jmatrix[1,7] = 7 
-        #Jmatrix[1,8] = 7 
-        #Jmatrix[1,9] = 7
-        Jmatrix[2,3] = 7 
-        Jmatrix[2,4] = 7
-        #Jmatrix[2,5] = 7 
-        #Jmatrix[2,6] = 7 
-        #Jmatrix[2,7] = 7 
-        #Jmatrix[2,8] = 7
-        #Jmatrix[2,9] = 7 
-        self.Jmatrix = Jmatrix
-        self.PlotFrame = PlotFrame(self, self.fig, self.canvas)
         self.sim()
         
-    
-    def sim(self,ResetAxis = False):
+    def SetRefFreq(self):
+        index = ABBREVLIST.index(self.RefNucleus)
+        self.RefFreq = freqRatioList[index] * GAMMASCALE * 1e6 * self.B0
+        
+    def sim(self,ResetXAxis = False, ResetYAxis = False):
+        if self.Jmatrix is None:
+            self.Jmatrix = np.zeros((len(self.SpinList),len(self.SpinList)))
         self.SpinSystem = spinSystemCls(self.SpinList, self.Jmatrix, self.B0,self.StrongCoupling)
-        self.Spectrum, self.Axis, self.RefFreq = MakeSpectrum(self.SpinSystem,self.RefNucleus,self.B0,self.Limits,self.Lb,self.NumPoints)
+        self.Spectrum, self.Axis, self.RefFreq = MakeSpectrum(self.SpinSystem,self.RefFreq,self.B0,self.Limits,self.Lb,self.NumPoints)
         self.PlotFrame.setData(self.Axis, self.Spectrum)
-        if ResetAxis:
-            self.PlotFrame.plotReset(xReset=True,yReset = False)
+        if ResetXAxis:
+            self.PlotFrame.plotReset(xReset = True, yReset = False)
+        if ResetYAxis:
+            self.PlotFrame.plotReset(xReset = False, yReset = True)
         self.PlotFrame.showFid()
    
 
