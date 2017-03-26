@@ -6,7 +6,6 @@ import sip
 import sys
 sip.setapi('QString', 2)
 try:
-    import bla
     from PyQt4 import QtGui, QtCore
     from PyQt4 import QtGui as QtWidgets
     QT = 4
@@ -27,7 +26,7 @@ from safeEval import safeEval
 
 
 
-
+NSTEPS = 1000
 
 
 
@@ -191,10 +190,10 @@ def MakeSpectrum(SpinSystem,RefFreq,B0,AxisLimits,LineBroadening,NumPoints):
     Hdiag,T = np.linalg.eigh(SpinSystem.Htot)
     Tinv = np.linalg.inv(T)
     
-    RhoProp = Tinv @ SpinSystem.RhoZero @ T
+    RhoProp = np.dot(np.dot(Tinv , SpinSystem.RhoZero) , T)
     RhoProp =  np.tril(RhoProp,1)
 
-    DetectProp = np.real(Tinv @ SpinSystem.DetectOp @ T)
+    DetectProp = np.real(np.dot(np.dot(Tinv , SpinSystem.DetectOp) , T))
     AllInts = np.real(DetectProp * RhoProp)
     
     #Get intensies and frequencies
@@ -300,7 +299,7 @@ class SettingsFrame(QtWidgets.QWidget):
         grid.addWidget(QtWidgets.QLabel("# Points [x1024]:"), 0, 2,QtCore.Qt.AlignHCenter)
         self.NumPointsSetting = QtWidgets.QLineEdit(self)
         self.NumPointsSetting.setAlignment(QtCore.Qt.AlignHCenter)
-        self.NumPointsSetting.setText(str(self.father.NumPoints/1024))
+        self.NumPointsSetting.setText(str(int(self.father.NumPoints/1024)))
         self.NumPointsSetting.returnPressed.connect(self.ApplySettings)
         grid.addWidget(self.NumPointsSetting, 0, 3)
            
@@ -358,6 +357,7 @@ class SpinsysFrame(QtWidgets.QWidget):
     def __init__(self, parent):
         super(SpinsysFrame, self).__init__(parent)
         self.father = parent
+        self.Jmatrix = np.array([])
         self.grid = QtWidgets.QGridLayout(self)
         self.grid.addWidget(QtWidgets.QLabel("Spin System:"), 0, 0,1,5,QtCore.Qt.AlignHCenter)
 
@@ -375,13 +375,19 @@ class SpinsysFrame(QtWidgets.QWidget):
         self.grid.addWidget(QtWidgets.QLabel("Shift:"), 5, 2,QtCore.Qt.AlignHCenter)
         self.grid.addWidget(QtWidgets.QLabel("Multiplicity:"), 5, 3,QtCore.Qt.AlignHCenter)
         self.grid.addWidget(QtWidgets.QLabel("Remove:"), 5, 4,QtCore.Qt.AlignHCenter)
-        self.spinSysWidgets = {'Number':[],'Isotope':[], 'Shift':[], 'Multi':[]}
+        self.spinSysWidgets = {'Number':[],'Isotope':[], 'Shift':[], 'Multi':[], 'Remove':[]}
+        self.sliderWidgets = {'Label':[],'Slider':[],'Remove':[]}
         self.Nspins = 0
-        self.grid.setColumnStretch(10, 1)
-        self.grid.setRowStretch(10, 1)
         
-        self.addSpin('1H',1.23,1)
-        self.addSpin('13C',10.2,4)
+        self.addSliderButton = QtWidgets.QPushButton("Add slider")
+        self.addSliderButton.clicked.connect(self.addSliderManager)
+        self.grid.addWidget(self.addSliderButton,100,0,1,5)        
+        
+        self.grid.setColumnStretch(200, 1)
+        self.grid.setRowStretch(200, 1)
+        
+#        self.addSpin('1H',1.23,1)
+#        self.addSpin('13C',10.2,4)
         
     def addSpin(self,Isotope,Shift,Multiplicity):
         self.Nspins += 1
@@ -396,22 +402,31 @@ class SpinsysFrame(QtWidgets.QWidget):
         self.spinSysWidgets['Shift'][-1].setText(str(Shift))
         self.spinSysWidgets['Shift'][-1].returnPressed.connect(self.parseSpinSys)
         self.grid.addWidget(self.spinSysWidgets['Shift'][-1],5 + self.Nspins,2)
+        
         self.spinSysWidgets['Multi'].append(QtWidgets.QSpinBox())
         self.spinSysWidgets['Multi'][-1].setValue(Multiplicity)
         self.spinSysWidgets['Multi'][-1].setMinimum(1)
+        self.spinSysWidgets['Multi'][-1].valueChanged.connect(lambda: self.parseSpinSys())
         self.grid.addWidget(self.spinSysWidgets['Multi'][-1],5 + self.Nspins,3)
         
+        self.spinSysWidgets['Remove'].append(QtWidgets.QPushButton("X"))
+        self.spinSysWidgets['Remove'][-1].clicked.connect((lambda n: lambda: self.removeSpin(n))(self.Nspins))
+        self.grid.addWidget(self.spinSysWidgets['Remove'][-1],5 + self.Nspins,4)
+        
+        temp = np.zeros((self.Nspins,self.Nspins))
+        temp[:-1,:-1] = self.Jmatrix
+        self.Jmatrix = temp
         self.parseSpinSys(True)
      
         
     def setJManager(self):
-        dialog = setJWindow(self)
+        dialog = setJWindow(self,self.Jmatrix)
         if dialog.exec_():
             if dialog.closed:
                 return
             else:
-                pass
-#                self.addSpin(dialog.Isotope,dialog.Shift,dialog.Multi)
+                self.Jmatrix = dialog.Jmatrix
+                self.parseSpinSys()
                 
     def addIsotopeManager(self):
         dialog = addIsotopeWindow(self)
@@ -420,17 +435,99 @@ class SpinsysFrame(QtWidgets.QWidget):
                 return
             else:
                 self.addSpin(dialog.Isotope,dialog.Shift,dialog.Multi)
-
                 
+    def addSliderManager(self):
+        dialog = addSliderWindow(self,self.Nspins)
+        if dialog.exec_():
+            if dialog.closed:
+                return
+            else:
+                num = len(self.sliderWidgets['Slider']) + 1
+                
+                self.sliderWidgets['Slider'].append(QtWidgets.QSlider(QtCore.Qt.Horizontal))
+                self.sliderWidgets['Slider'][-1].setRange(dialog.min * NSTEPS, dialog.max * NSTEPS)
+                self.sliderWidgets['Remove'].append(QtWidgets.QPushButton("X"))
+                self.sliderWidgets['Remove'][-1].clicked.connect((lambda n: lambda: self.removeSlider(n))(num))   
+                    
+                if dialog.type == 0: #If B0
+                    self.sliderWidgets['Slider'][-1].valueChanged.connect(self.setB0)
+                    self.sliderWidgets['Label'].append(QtWidgets.QLabel('B<sub>0</sub>:'))
+                    self.sliderWidgets['Slider'][-1].setValue(self.father.B0*NSTEPS)
+                if dialog.type == 1: #If shift
+                    spin = dialog.spin1
+                    self.sliderWidgets['Slider'][-1].valueChanged.connect((lambda n, x: lambda: self.setShift(n,x))(spin,len(self.sliderWidgets['Slider'])))
+                    self.sliderWidgets['Label'].append(QtWidgets.QLabel('Shift (#' + str(spin) + ')'))
+                    self.sliderWidgets['Slider'][-1].setValue(safeEval(self.spinSysWidgets['Shift'][spin-1].text()) * NSTEPS)
+                if dialog.type == 2: #If J
+                    spin = dialog.spin1
+                    spin2 = dialog.spin2
+                    self.sliderWidgets['Slider'][-1].valueChanged.connect((lambda n, m, x: lambda: self.setJ(n,m,x))(spin,spin2,len(self.sliderWidgets['Slider'])))
+                    self.sliderWidgets['Label'].append(QtWidgets.QLabel('J (' + str(spin) + ',' + str(spin2) + ')'))
+                    self.sliderWidgets['Slider'][-1].setValue(self.Jmatrix[spin - 1, spin2 - 1] * NSTEPS)
+                    
+                self.grid.addWidget(self.sliderWidgets['Label'][-1],100 + num,0)
+                self.grid.addWidget(self.sliderWidgets['Slider'][-1],100 + num,1,1,3)
+                self.grid.addWidget(self.sliderWidgets['Remove'][-1],100 + num,4)
+                    
+    def setB0(self,B0):
+        self.father.setB0(float(B0)/NSTEPS)
+        
+    def setShift(self,spinNum,widgetNum):
+        self.spinSysWidgets['Shift'][spinNum - 1].setText(str(float(self.sliderWidgets['Slider'][widgetNum - 1].value()) / NSTEPS))
+        self.parseSpinSys()
+        
+    def setJ(self,spin1Num,spin2Num,widgetNum):
+        J = float(self.sliderWidgets['Slider'][widgetNum - 1].value()) / NSTEPS
+        self.Jmatrix[spin1Num - 1, spin2Num - 1] = J
+        self.parseSpinSys()
+        
+    def removeSlider(self,index):
+       for var in self.sliderWidgets.keys():
+            self.grid.removeWidget(self.sliderWidgets[var][index - 1])
+            self.sliderWidgets[var][index - 1].setParent( None )
+            self.sliderWidgets[var][index - 1] = None
+        
+    def removeSpin(self,index):
+        backup = self.spinSysWidgets.copy()
+        for spin in range(self.Nspins):
+            for var in self.spinSysWidgets.keys():
+                self.grid.removeWidget(self.spinSysWidgets[var][spin])
+                self.spinSysWidgets[var][spin].setParent( None )
+        self.Nspins = 0
+        Jtemp = self.Jmatrix
+        Jtemp = np.delete(Jtemp, index - 1, 0)
+        Jtemp = np.delete(Jtemp, index - 1, 1)
+        self.Jmatrix = np.array([])
+        
+        self.spinSysWidgets = {'Number':[],'Isotope':[], 'Shift':[], 'Multi':[], 'Remove':[]}
+        for spin in range(len(backup['Shift'])):
+            if spin != index - 1:
+                self.addSpin(backup['Isotope'][spin].text(),float(backup['Shift'][spin].text()),backup['Multi'][spin].value())
+        self.Jmatrix = Jtemp    
+        del backup    
+        self.parseSpinSys()
+
+            
     def parseSpinSys(self,ResetAxis = False):
         self.father.SpinList = []
         NSpins = len(self.spinSysWidgets['Isotope'])
-        
+        fullSpinList = []
+        fullSpinListIndex = []
         for Spin in range(NSpins):
-            self.father.SpinList.append(spinCls(self.spinSysWidgets['Isotope'][Spin].text(),safeEval(self.spinSysWidgets['Shift'][Spin].text()),True))
+            spinTemp = spinCls(self.spinSysWidgets['Isotope'][Spin].text(),safeEval(self.spinSysWidgets['Shift'][Spin].text()),True)
+            multi = self.spinSysWidgets['Multi'][Spin].value()
+            for iii in range(multi):
+                fullSpinList.append(spinTemp)
+                fullSpinListIndex.append(Spin)
         
-        self.father.Jmatrix = np.zeros((NSpins,NSpins))
-        
+        totalSpins = len(fullSpinListIndex)    
+        JmatrixTemp = np.zeros((totalSpins,totalSpins))    
+        for Spin in range(totalSpins):
+            for subSpin in range(totalSpins):
+                JmatrixTemp[Spin,subSpin] = self.Jmatrix[fullSpinListIndex[Spin],fullSpinListIndex[subSpin]]
+            
+        self.father.Jmatrix = JmatrixTemp
+        self.father.SpinList = fullSpinList
         self.father.sim(ResetAxis,ResetAxis)
             
     def drawSpinSys(self):
@@ -490,20 +587,34 @@ class addIsotopeWindow(QtWidgets.QDialog):
         self.deleteLater()
 
 class setJWindow(QtWidgets.QDialog):
-    def __init__(self, parent, Jmatrix, numSpins):
+    def __init__(self, parent, Jmatrix):
         QtWidgets.QWidget.__init__(self, parent)
         self.setWindowFlags(QtCore.Qt.Window | QtCore.Qt.Tool)
+        self.setWindowTitle("Set J-couplings")
         self.father = parent
         self.closed = False
         self.Jmatrix = Jmatrix
-        self.numSpins = numSpins
+        self.numSpins = Jmatrix.shape[0]
         grid = QtWidgets.QGridLayout(self)
+        
+        self.jInputWidgets = [[None] * self.numSpins for x in range(self.numSpins)]
+        grid.addWidget(QtWidgets.QLabel('<b>Spin #</b>'), 0, 0,QtCore.Qt.AlignHCenter)
+        for spin in range(self.numSpins):
+            grid.addWidget(QtWidgets.QLabel('<b>' + str(spin + 1) + '</b>'), spin + 1, 0,QtCore.Qt.AlignHCenter)
+            grid.addWidget(QtWidgets.QLabel('<b>' + str(spin + 1) + '</b>'),0, spin + 1,QtCore.Qt.AlignHCenter)
+            
+            for subspin in range(self.numSpins):
+                if subspin > spin:
+                    self.jInputWidgets[spin][subspin] = QtWidgets.QLineEdit()
+                    self.jInputWidgets[spin][subspin].setText(str(self.Jmatrix[spin,subspin]))
+                    grid.addWidget(self.jInputWidgets[spin][subspin],spin + 1, subspin + 1)
+        grid.setColumnMinimumWidth (1, 50)    
         cancelButton = QtWidgets.QPushButton("&Cancel")
         cancelButton.clicked.connect(self.closeEvent)
-        grid.addWidget(cancelButton, 13, 0)
+        grid.addWidget(cancelButton, self.numSpins + 5, 0)
         okButton = QtWidgets.QPushButton("&Ok")
         okButton.clicked.connect(self.applyAndClose)
-        grid.addWidget(okButton, 13, 2)
+        grid.addWidget(okButton, self.numSpins + 5, self.numSpins + 5)
         
         self.show()
         self.setFixedSize(self.size())
@@ -514,12 +625,119 @@ class setJWindow(QtWidgets.QDialog):
         self.deleteLater()
 
     def applyAndClose(self):
-#        self.Isotope = ABBREVLIST[self.typeSetting.currentIndex()]
-#        self.Shift = safeEval(self.shiftSetting.text())
-#        self.Multi = self.multiSettings.value()
+        for spin in range(self.numSpins):
+            for subspin in range(self.numSpins):
+                if subspin > spin:
+                    val = safeEval(self.jInputWidgets[spin][subspin].text())
+                    if val == None:
+                        return
+                    self.Jmatrix[spin,subspin] = val
         
         self.accept()
         self.deleteLater()
+
+
+class addSliderWindow(QtWidgets.QDialog):
+    def __init__(self, parent, numSpins):
+        QtWidgets.QWidget.__init__(self, parent)
+        self.setWindowFlags(QtCore.Qt.Window | QtCore.Qt.Tool)
+        self.setWindowTitle("Add slider")
+        self.father = parent
+        self.closed = False
+        self.numSpins = numSpins
+        self.type = 0
+        self.min = 0
+        self.max = 10
+        self.spin1 = 0
+        self.spin2 = 0
+        grid = QtWidgets.QGridLayout(self)
+        
+
+        grid.addWidget(QtWidgets.QLabel('Type:'), 0, 0,QtCore.Qt.AlignHCenter)
+        self.typeSetting = QtWidgets.QComboBox()
+        self.typeSetting.addItems(['B0 [T]','Shift [ppm]','J-coupling [Hz]'])
+        self.typeSetting.currentIndexChanged.connect(self.typeChanged)
+        grid.addWidget(self.typeSetting, 1, 0,QtCore.Qt.AlignHCenter)
+        grid.addWidget(QtWidgets.QLabel('Minimum:'), 2, 0,QtCore.Qt.AlignHCenter)
+        grid.addWidget(QtWidgets.QLabel('Maximum:'), 2, 1,QtCore.Qt.AlignHCenter)
+        self.minInput = QtWidgets.QLineEdit() 
+        self.minInput.setText(str(self.min))
+        grid.addWidget(self.minInput, 3, 0,QtCore.Qt.AlignHCenter)
+        self.maxInput = QtWidgets.QLineEdit() 
+        self.maxInput.setText(str(self.max))
+        grid.addWidget(self.maxInput, 3, 1,QtCore.Qt.AlignHCenter)
+        
+        self.spin1Label = QtWidgets.QLabel('Spin:')
+        grid.addWidget(self.spin1Label, 4, 0,QtCore.Qt.AlignHCenter)
+        self.spin1Label.hide()
+        self.spin1Value = QtWidgets.QSpinBox() 
+        self.spin1Value.setValue(1)
+        self.spin1Value.setMinimum(1)
+        self.spin1Value.setMaximum(self.numSpins)
+        grid.addWidget(self.spin1Value, 5, 0)
+        self.spin1Value.hide()
+        
+        self.spin2Label = QtWidgets.QLabel('Spin #2:')
+        grid.addWidget(self.spin2Label, 4, 1,QtCore.Qt.AlignHCenter)
+        self.spin2Label.hide()
+        self.spin2Value = QtWidgets.QSpinBox() 
+        self.spin2Value.setValue(1)
+        self.spin2Value.setMinimum(1)
+        self.spin2Value.setMaximum(self.numSpins)
+        grid.addWidget(self.spin2Value, 5, 1)
+        self.spin2Value.hide()
+        
+        
+        cancelButton = QtWidgets.QPushButton("&Cancel")
+        cancelButton.clicked.connect(self.closeEvent)
+        grid.addWidget(cancelButton, 10, 0)
+        okButton = QtWidgets.QPushButton("&Ok")
+        okButton.clicked.connect(self.applyAndClose)
+        grid.addWidget(okButton, 10, 1)
+        grid.setRowStretch(9, 1)
+        self.show()
+        
+#        self.setFixedSize(self.size())
+    
+    def typeChanged(self):
+        self.type = self.typeSetting.currentIndex()
+        if self.type == 0:
+            self.spin1Label.hide()
+            self.spin1Value.hide()
+            self.spin2Label.hide()
+            self.spin2Value.hide()
+        elif self.type == 1:
+            self.spin1Label.show()
+            self.spin1Value.show()
+        elif self.type == 2:
+            self.spin1Label.show()
+            self.spin1Value.show()
+            self.spin2Label.show()
+            self.spin2Value.show()
+        
+    def closeEvent(self, *args):
+        self.closed = True
+        self.accept()
+        self.deleteLater()
+
+    def applyAndClose(self):
+        self.min = safeEval(self.minInput.text())
+        self.max = safeEval(self.maxInput.text())
+        self.spin1 = self.spin1Value.value()
+        self.spin2 = self.spin2Value.value()
+        if self.type == 2:
+            if self.spin1 == self.spin2:
+                return
+            if self.spin2 < self.spin1:
+                self.spin1, self.spin2 = (self.spin2,self.spin1)    
+        if self.min == None or self.max == None:
+            return
+        if self.min > self.max:
+            self.min, self.max = (self.max,self.min)
+        self.accept()
+        self.deleteLater()
+
+
         
 class MainProgram(QtWidgets.QMainWindow):
 
@@ -538,9 +756,9 @@ class MainProgram(QtWidgets.QMainWindow):
         self.mainFrame.setRowStretch(0, 1)
         
         self.B0 = 14.1 #Tesla
-        self.Lb = 1 #Hz
+        self.Lb = 10 #Hz
         self.NumPoints = 1024*32
-        self.Limits = np.array([0.0,8.0]) #ppm
+        self.Limits = np.array([-2.0,8.0]) #ppm
         self.RefNucleus = '1H'
         self.RefFreq = 0
         self.SetRefFreq()
@@ -558,6 +776,10 @@ class MainProgram(QtWidgets.QMainWindow):
         
         
         self.sim()
+    def setB0(self,B0):
+        self.settingsFrame.B0Setting.setText(str(B0))
+        self.settingsFrame.ApplySettings()
+        
         
     def SetRefFreq(self):
         index = ABBREVLIST.index(self.RefNucleus)
