@@ -176,7 +176,7 @@ class spinSystemCls:
         for index in range(len(self.SpinList)):
             if self.SpinList[index].Detect:
                RhoZero =  RhoZero + self.SpinOperators['Ix'][index]
-        return RhoZero
+        return RhoZero / self.MatrixSize # Scale with Partition Function of boltzmann equation
 
 
 
@@ -219,7 +219,6 @@ def MakeSpectrum(SpinSystem,RefFreq,B0,AxisLimits,LineBroadening,NumPoints):
        Fid = Fid * np.exp(-TimeAxis * lb)
    
        Spectrum = np.real(np.fft.fftshift(np.fft.fft(Fid)))
-#       Spectrum = Spectrum / np.max(Spectrum)
 
     Axis = (Axis[1:] + 0.5 * (Axis[0] - Axis[1]))  / (RefFreq * 1e-6)
     
@@ -696,8 +695,7 @@ class addSliderWindow(QtWidgets.QDialog):
         grid.addWidget(okButton, 10, 1)
         grid.setRowStretch(9, 1)
         self.show()
-        
-#        self.setFixedSize(self.size())
+
     
     def typeChanged(self):
         self.type = self.typeSetting.currentIndex()
@@ -801,7 +799,7 @@ class MainProgram(QtWidgets.QMainWindow):
 if __name__ == '__main__':
     root = QtWidgets.QApplication(sys.argv)
     mainProgram = MainProgram(root)
-    mainProgram.setWindowTitle("Jellyfish")
+    mainProgram.setWindowTitle(u"Jellyfish \u2014 J-coupling simulations")
     mainProgram.show()
     sys.exit(root.exec_())
 
