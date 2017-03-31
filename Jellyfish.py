@@ -371,7 +371,7 @@ class SpinsysFrame(QtWidgets.QWidget):
 
         self.grid.addWidget(QtWidgets.QLabel("#:"), 5, 0,QtCore.Qt.AlignHCenter)
         self.grid.addWidget(QtWidgets.QLabel("Type:"), 5, 1,QtCore.Qt.AlignHCenter)
-        self.grid.addWidget(QtWidgets.QLabel("Shift:"), 5, 2,QtCore.Qt.AlignHCenter)
+        self.grid.addWidget(QtWidgets.QLabel("Shift [ppm]:"), 5, 2,QtCore.Qt.AlignHCenter)
         self.grid.addWidget(QtWidgets.QLabel("Multiplicity:"), 5, 3,QtCore.Qt.AlignHCenter)
         self.grid.addWidget(QtWidgets.QLabel("Remove:"), 5, 4,QtCore.Qt.AlignHCenter)
         self.spinSysWidgets = {'Number':[],'Isotope':[], 'Shift':[], 'Multi':[], 'Remove':[]}
@@ -707,6 +707,8 @@ class addSliderWindow(QtWidgets.QDialog):
         elif self.type == 1:
             self.spin1Label.show()
             self.spin1Value.show()
+            self.spin2Label.hide()
+            self.spin2Value.hide()
         elif self.type == 2:
             self.spin1Label.show()
             self.spin1Value.show()
