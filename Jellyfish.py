@@ -222,7 +222,7 @@ def MakeSpectrum(SpinSystem,RefFreq,B0,AxisLimits,LineBroadening,NumPoints):
 
     Axis = (Axis[1:] + 0.5 * (Axis[0] - Axis[1]))  / (RefFreq * 1e-6)
     
-    return Spectrum, Axis, RefFreq
+    return Spectrum * NumPoints, Axis, RefFreq
     
 
 
