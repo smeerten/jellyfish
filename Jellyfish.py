@@ -375,6 +375,7 @@ class SpinsysFrame(QtWidgets.QWidget):
         self.grid.addWidget(QtWidgets.QLabel("Multiplicity:"), 5, 3,QtCore.Qt.AlignHCenter)
         self.grid.addWidget(QtWidgets.QLabel("Remove:"), 5, 4,QtCore.Qt.AlignHCenter)
         self.spinSysWidgets = {'Number':[],'Isotope':[], 'Shift':[], 'Multi':[], 'Remove':[]}
+        self.sliderTypes = {'Type':[],'Spins':[]}
         self.sliderWidgets = {'Label':[],'Slider':[],'Remove':[]}
         self.Nspins = 0
         
@@ -452,17 +453,23 @@ class SpinsysFrame(QtWidgets.QWidget):
                     self.sliderWidgets['Slider'][-1].valueChanged.connect(self.setB0)
                     self.sliderWidgets['Label'].append(QtWidgets.QLabel('B<sub>0</sub>:'))
                     self.sliderWidgets['Slider'][-1].setValue(self.father.B0*NSTEPS)
+                    self.sliderTypes['Spins'].append([None])
+                    self.sliderTypes['Type'].append('B0')
                 if dialog.type == 1: #If shift
                     spin = dialog.spin1
                     self.sliderWidgets['Slider'][-1].valueChanged.connect((lambda n, x: lambda: self.setShift(n,x))(spin,len(self.sliderWidgets['Slider'])))
                     self.sliderWidgets['Label'].append(QtWidgets.QLabel('Shift (#' + str(spin) + ')'))
                     self.sliderWidgets['Slider'][-1].setValue(safeEval(self.spinSysWidgets['Shift'][spin-1].text()) * NSTEPS)
+                    self.sliderTypes['Spins'].append([spin])
+                    self.sliderTypes['Type'].append('Shift')
                 if dialog.type == 2: #If J
                     spin = dialog.spin1
                     spin2 = dialog.spin2
                     self.sliderWidgets['Slider'][-1].valueChanged.connect((lambda n, m, x: lambda: self.setJ(n,m,x))(spin,spin2,len(self.sliderWidgets['Slider'])))
                     self.sliderWidgets['Label'].append(QtWidgets.QLabel('J (' + str(spin) + ',' + str(spin2) + ')'))
                     self.sliderWidgets['Slider'][-1].setValue(self.Jmatrix[spin - 1, spin2 - 1] * NSTEPS)
+                    self.sliderTypes['Spins'].append([spin, spin2])
+                    self.sliderTypes['Type'].append('J')
                     
                 self.grid.addWidget(self.sliderWidgets['Label'][-1],100 + num,0)
                 self.grid.addWidget(self.sliderWidgets['Slider'][-1],100 + num,1,1,3)
@@ -485,6 +492,9 @@ class SpinsysFrame(QtWidgets.QWidget):
             self.grid.removeWidget(self.sliderWidgets[var][index - 1])
             self.sliderWidgets[var][index - 1].setParent( None )
             self.sliderWidgets[var][index - 1] = None
+       for var in self.sliderTypes.keys():
+           self.sliderTypes[var].pop(index - 1)
+
         
     def removeSpin(self,index):
         backup = self.spinSysWidgets.copy()
@@ -492,6 +502,29 @@ class SpinsysFrame(QtWidgets.QWidget):
             for var in self.spinSysWidgets.keys():
                 self.grid.removeWidget(self.spinSysWidgets[var][spin])
                 self.spinSysWidgets[var][spin].setParent( None )
+        removeSliders = []
+        for sliderVal in range(len(self.sliderWidgets['Slider'])):
+            if self.sliderTypes['Type'][sliderVal] == 'Shift':
+                sliderSpinTmp = self.sliderTypes['Spins'][sliderVal][0]
+                if sliderSpinTmp == index:
+                    removeSliders.append(sliderVal)
+                elif sliderSpinTmp > index:
+                    self.sliderWidgets['Slider'][sliderVal].valueChanged.disconnect()
+                    self.sliderWidgets['Slider'][sliderVal].valueChanged.connect((lambda n, x: lambda: self.setShift(n,x))(sliderSpinTmp - 1, sliderVal + 1))
+                    self.sliderWidgets['Label'][sliderVal].setText('Shift (#' + str(sliderSpinTmp) + ')')
+            elif self.sliderTypes['Type'][sliderVal] == 'J':
+                SpinTmp = self.sliderTypes['Spins'][sliderVal]
+                if index in SpinTmp:
+                    removeSliders.append(sliderVal)
+                elif SpinTmp[0] > index:
+                    pass
+
+
+
+
+
+
+
         self.Nspins = 0
         Jtemp = self.Jmatrix
         Jtemp = np.delete(Jtemp, index - 1, 0)
