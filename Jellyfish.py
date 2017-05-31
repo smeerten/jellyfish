@@ -399,6 +399,7 @@ class SpinsysFrame(QtWidgets.QWidget):
         
         
         self.spinSysWidgets['Shift'].append(QtWidgets.QLineEdit())
+        self.spinSysWidgets['Shift'][-1].setAlignment(QtCore.Qt.AlignHCenter)
         self.spinSysWidgets['Shift'][-1].setText(str(Shift))
         self.spinSysWidgets['Shift'][-1].returnPressed.connect(self.parseSpinSys)
         self.grid.addWidget(self.spinSysWidgets['Shift'][-1],5 + self.Nspins,2)
@@ -488,12 +489,11 @@ class SpinsysFrame(QtWidgets.QWidget):
         self.parseSpinSys()
         
     def removeSlider(self,index):
-       for var in self.sliderWidgets.keys():
+        for var in self.sliderWidgets.keys():
             self.grid.removeWidget(self.sliderWidgets[var][index - 1])
             self.sliderWidgets[var][index - 1].setParent( None )
             self.sliderWidgets[var][index - 1] = None
-       for var in self.sliderTypes.keys():
-           self.sliderTypes[var].pop(index - 1)
+        self.sliderTypes['Type'][index - 1] = None
 
         
     def removeSpin(self,index):
@@ -511,19 +511,28 @@ class SpinsysFrame(QtWidgets.QWidget):
                 elif sliderSpinTmp > index:
                     self.sliderWidgets['Slider'][sliderVal].valueChanged.disconnect()
                     self.sliderWidgets['Slider'][sliderVal].valueChanged.connect((lambda n, x: lambda: self.setShift(n,x))(sliderSpinTmp - 1, sliderVal + 1))
-                    self.sliderWidgets['Label'][sliderVal].setText('Shift (#' + str(sliderSpinTmp) + ')')
+                    self.sliderWidgets['Label'][sliderVal].setText('Shift (#' + str(sliderSpinTmp - 1) + ')')
+                    self.sliderTypes['Spins'][sliderVal] = [sliderSpinTmp - 1]
             elif self.sliderTypes['Type'][sliderVal] == 'J':
                 SpinTmp = self.sliderTypes['Spins'][sliderVal]
+                SpinBool = [a > index for a in SpinTmp]
                 if index in SpinTmp:
                     removeSliders.append(sliderVal)
-                elif SpinTmp[0] > index:
-                    pass
+                elif SpinBool[0] or SpinBool[1]: #If change is needed
+                    Spins = [None,None]
+                    for i in range(len(SpinTmp)):
+                        Spins[i] = SpinTmp[i] - SpinBool[i]
+                    self.sliderWidgets['Slider'][sliderVal].valueChanged.disconnect()
+                    self.sliderWidgets['Slider'][sliderVal].valueChanged.connect((lambda n, m, x: lambda: self.setJ(n,m,x))(Spins[0],Spins[1],sliderVal + 1))
+                    self.sliderTypes['Spins'][sliderVal] = Spins
+                    self.sliderWidgets['Label'][sliderVal].setText('J (' + str(Spins[0]) + ',' + str(Spins[1]) + ')')
+                    
 
-
-
-
-
-
+        #Remove sliders via emitting their remove signal
+        sliderDelIndex = 0
+        for iii in removeSliders:
+            self.sliderWidgets['Remove'][iii - sliderDelIndex].click()
+            sliderDelIndex += 1
 
         self.Nspins = 0
         Jtemp = self.Jmatrix
@@ -639,6 +648,7 @@ class setJWindow(QtWidgets.QDialog):
                 if subspin > spin:
                     self.jInputWidgets[spin][subspin] = QtWidgets.QLineEdit()
                     self.jInputWidgets[spin][subspin].setText(str(self.Jmatrix[spin,subspin]))
+                    self.jInputWidgets[spin][subspin].setAlignment(QtCore.Qt.AlignHCenter)
                     grid.addWidget(self.jInputWidgets[spin][subspin],spin + 1, subspin + 1)
         grid.setColumnMinimumWidth (1, 50)    
         cancelButton = QtWidgets.QPushButton("&Cancel")
