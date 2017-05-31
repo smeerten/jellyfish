@@ -226,7 +226,27 @@ def MakeSpectrum(SpinSystem,RefFreq,B0,AxisLimits,LineBroadening,NumPoints):
     
 
 
+def MakeHomoSpectrum(SpinList,Jmatrix,RefFreq,B0,AxisLimits,LineBroadening,NumPoints):
+    #Make isotope sets
+    IsoSets = {}
+    for spin in range(len(SpinList)):
+        inlist = False
+        for iso in IsoSets.keys():
+            print(iso)
+            print(SpinList[spin][0])
+            if iso == SpinList[spin][0]:
+                IsoSets[iso].append(spin) #Append the index
+                inlist = True
 
+        if not inlist: #If not, append name and
+            IsoSets[SpinList[spin][0]] = [spin]
+    print(IsoSets)
+    #For each isotope, calc spectra for all options with j coupling partners
+
+    
+
+
+    return None, None, None
 
 
 class PlotFrame(Plot1DFrame):
@@ -386,8 +406,6 @@ class SpinsysFrame(QtWidgets.QWidget):
         self.grid.setColumnStretch(200, 1)
         self.grid.setRowStretch(200, 1)
         
-#        self.addSpin('1H',1.23,1)
-#        self.addSpin('13C',10.2,4)
         
     def addSpin(self,Isotope,Shift,Multiplicity):
         self.Nspins += 1
@@ -548,27 +566,19 @@ class SpinsysFrame(QtWidgets.QWidget):
         del backup    
         self.parseSpinSys()
 
-            
+    def drawSpinSys(self):
+        for Spin in range(self.spinSystem['Isotope']):
+            self.spinSysWidgets['Isotope']
+
     def parseSpinSys(self,ResetAxis = False):
         self.father.SpinList = []
         NSpins = len(self.spinSysWidgets['Isotope'])
-        fullSpinList = []
-        fullSpinListIndex = []
+        SpinList = []
         for Spin in range(NSpins):
-            spinTemp = spinCls(self.spinSysWidgets['Isotope'][Spin].text(),safeEval(self.spinSysWidgets['Shift'][Spin].text()),True)
-            multi = self.spinSysWidgets['Multi'][Spin].value()
-            for iii in range(multi):
-                fullSpinList.append(spinTemp)
-                fullSpinListIndex.append(Spin)
+            SpinList.append([self.spinSysWidgets['Isotope'][Spin].text(),safeEval(self.spinSysWidgets['Shift'][Spin].text()),self.spinSysWidgets['Multi'][Spin].value(),True])
         
-        totalSpins = len(fullSpinListIndex)    
-        JmatrixTemp = np.zeros((totalSpins,totalSpins))    
-        for Spin in range(totalSpins):
-            for subSpin in range(totalSpins):
-                JmatrixTemp[Spin,subSpin] = self.Jmatrix[fullSpinListIndex[Spin],fullSpinListIndex[subSpin]]
-            
-        self.father.Jmatrix = JmatrixTemp
-        self.father.SpinList = fullSpinList
+        self.father.Jmatrix = self.Jmatrix
+        self.father.SpinList = SpinList
         self.father.sim(ResetAxis,ResetAxis)
             
     def drawSpinSys(self):
@@ -780,6 +790,31 @@ class addSliderWindow(QtWidgets.QDialog):
         self.accept()
         self.deleteLater()
 
+def expandSpinsys(SpinList,Jmatrix):
+    NSpins = len(SpinList)
+    fullSpinList = []
+    fullSpinListIndex = []
+    for Spin in range(NSpins):
+        #spinTemp = spinCls(self.spinSysWidgets['Isotope'][Spin].text(),safeEval(self.spinSysWidgets['Shift'][Spin].text()),True)
+        spinTemp = spinCls(SpinList[Spin][0],SpinList[Spin][1],True)
+        multi = SpinList[Spin][2]
+        for iii in range(multi):
+            fullSpinList.append(spinTemp)
+            fullSpinListIndex.append(Spin)
+    
+    totalSpins = len(fullSpinListIndex)    
+    FullJmatrix = np.zeros((totalSpins,totalSpins))    
+    for Spin in range(totalSpins):
+        for subSpin in range(totalSpins):
+            FullJmatrix[Spin,subSpin] = Jmatrix[fullSpinListIndex[Spin],fullSpinListIndex[subSpin]]
+        
+    #------------------    
+    if FullJmatrix is None:
+        FullJmatrix = np.zeros(totalSpins,totalSpins)
+
+    return fullSpinList, FullJmatrix
+
+
 
         
 class MainProgram(QtWidgets.QMainWindow):
@@ -805,6 +840,7 @@ class MainProgram(QtWidgets.QMainWindow):
         self.RefNucleus = '1H'
         self.RefFreq = 0
         self.SetRefFreq()
+        self.SimType = 0
         self.Jmatrix = None
         self.StrongCoupling = True
         self.SpinList = []
@@ -829,10 +865,15 @@ class MainProgram(QtWidgets.QMainWindow):
         self.RefFreq = freqRatioList[index] * GAMMASCALE * 1e6 * self.B0
         
     def sim(self,ResetXAxis = False, ResetYAxis = False):
-        if self.Jmatrix is None:
-            self.Jmatrix = np.zeros((len(self.SpinList),len(self.SpinList)))
-        self.SpinSystem = spinSystemCls(self.SpinList, self.Jmatrix, self.B0,self.StrongCoupling)
-        self.Spectrum, self.Axis, self.RefFreq = MakeSpectrum(self.SpinSystem,self.RefFreq,self.B0,self.Limits,self.Lb,self.NumPoints)
+
+        if self.SimType == 0: #If exact
+            fullSpinList, FullJmatrix = expandSpinsys(self.SpinList,self.Jmatrix)
+            SpinSystem = spinSystemCls(fullSpinList, FullJmatrix, self.B0,self.StrongCoupling)
+            self.Spectrum, self.Axis, self.RefFreq = MakeSpectrum(SpinSystem,self.RefFreq,self.B0,self.Limits,self.Lb,self.NumPoints)
+        elif self.SimType == 1: #If homonuclear strong
+            self.Spectrum, self.Axis, self.RefFreq = MakeHomoSpectrum(self.SpinList,self.Jmatrix,self.RefFreq,self.B0,self.Limits,self.Lb,self.NumPoints)
+            return
+
         self.PlotFrame.setData(self.Axis, self.Spectrum)
         if ResetXAxis:
             self.PlotFrame.plotReset(xReset = True, yReset = False)
