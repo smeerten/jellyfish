@@ -1,7 +1,6 @@
 import numpy as np
 import scipy.signal
 import os
-
 import sip
 import sys
 sip.setapi('QString', 2)
@@ -24,14 +23,7 @@ import matplotlib.pyplot as plt
 from spectrumFrame import Plot1DFrame
 from safeEval import safeEval
 
-
-
 NSTEPS = 1000
-
-
-
-
-
 
 GAMMASCALE = 42.577469 / 100
 with open(os.path.dirname(os.path.realpath(__file__)) +"/IsotopeProperties") as isoFile:
@@ -64,11 +56,6 @@ for i in range(N):
         freqRatioList[i] = isoN[8]
 
 
-
-
-
-
-
 class spinCls:
     def __init__(self, Nucleus, shift, Detect):
         self.index = ABBREVLIST.index(Nucleus)
@@ -86,7 +73,7 @@ class spinCls:
         
         self.Ident = np.eye(int(self.I*2+1))
 
-        
+
 class spinSystemCls:
     def __init__(self, SpinList, Jmatrix, B0,HighOrder = True):      
         self.SpinList = SpinList
@@ -98,7 +85,6 @@ class spinSystemCls:
         self.SpinOperators = {}
         for Operator in self.OperatorsFunctions.keys():
             self.SpinOperators[Operator] = self.MakeSingleOperator(self.OperatorsFunctions[Operator])
-
         self.Htot = self.MakeJhamiltonian() + self.MakeShiftHamil()
         self.DetectOp = self.MakeDetect()
         self.RhoZero = self.MakeRhoZero()
@@ -107,8 +93,7 @@ class spinSystemCls:
         self.MatrixSize = 1
         for spin in self.SpinList:
             self.MatrixSize = int(self.MatrixSize * (spin.I * 2 + 1))
-            
-            
+
     def MakeSingleOperator(self,Operator):
         Matrix = np.zeros((len(self.SpinList),self.MatrixSize,self.MatrixSize),dtype=complex)
         for spin in  range(len(self.SpinList)):
@@ -121,7 +106,6 @@ class spinSystemCls:
             
             Matrix[spin,:,:] = self.kronList(IList)
         return Matrix
-    
 
     def MakeMultipleOperator(self,Operator,SelectList):
        IList = []
@@ -132,7 +116,6 @@ class spinSystemCls:
                IList.append(self.SpinList[spin].Ident)
        Matrix = self.kronList(IList)
        return Matrix
-       
    
     def kronList(self,List):
         M = 1
@@ -161,7 +144,6 @@ class spinSystemCls:
                             temp += self.MakeMultipleOperator(OperatorsFunctions[operator],[spin,subspin])
                         Jham = Jham + Jmatrix[spin,subspin] * temp
         return Jham
-                        
         
     def MakeDetect(self):
         Detect = np.zeros((self.MatrixSize,self.MatrixSize))
@@ -170,14 +152,12 @@ class spinSystemCls:
                Detect =  Detect + self.SpinOperators['Ix'][index] + 1J * self.SpinOperators['Iy'][index]
         return Detect
 
-
     def MakeRhoZero(self):
         RhoZero = np.zeros((self.MatrixSize,self.MatrixSize))
         for index in range(len(self.SpinList)):
             if self.SpinList[index].Detect:
                RhoZero =  RhoZero + self.SpinOperators['Ix'][index]
         return RhoZero / self.MatrixSize # Scale with Partition Function of boltzmann equation
-
 
 
 def MakeSpectrum(SpinSystem,RefFreq,B0,AxisLimits,LineBroadening,NumPoints):
@@ -217,14 +197,9 @@ def MakeSpectrum(SpinSystem,RefFreq,B0,AxisLimits,LineBroadening,NumPoints):
        Fid = np.fft.ifft(np.fft.ifftshift(np.conj(scipy.signal.hilbert(Spectrum))))
        TimeAxis = np.linspace(0,NumPoints-1,NumPoints) * dw
        Fid = Fid * np.exp(-TimeAxis * lb)
-   
        Spectrum = np.real(np.fft.fftshift(np.fft.fft(Fid)))
-
     Axis = (Axis[1:] + 0.5 * (Axis[0] - Axis[1]))  / (RefFreq * 1e-6)
-    
     return Spectrum * NumPoints, Axis, RefFreq
-    
-
 
 def MakeHomoSpectrum(SpinList,Jmatrix,RefFreq,B0,AxisLimits,LineBroadening,NumPoints):
     #Make isotope sets
@@ -237,15 +212,10 @@ def MakeHomoSpectrum(SpinList,Jmatrix,RefFreq,B0,AxisLimits,LineBroadening,NumPo
             if iso == SpinList[spin][0]:
                 IsoSets[iso].append(spin) #Append the index
                 inlist = True
-
         if not inlist: #If not, append name and
             IsoSets[SpinList[spin][0]] = [spin]
     print(IsoSets)
     #For each isotope, calc spectra for all options with j coupling partners
-
-    
-
-
     return None, None, None
 
 
@@ -370,7 +340,6 @@ class SettingsFrame(QtWidgets.QWidget):
         self.father.sim(ResetAxis)
 
 
-
 class SpinsysFrame(QtWidgets.QWidget):
 
     def __init__(self, parent):
@@ -406,7 +375,6 @@ class SpinsysFrame(QtWidgets.QWidget):
         self.grid.setColumnStretch(200, 1)
         self.grid.setRowStretch(200, 1)
         
-        
     def addSpin(self,Isotope,Shift,Multiplicity):
         self.Nspins += 1
         self.spinSysWidgets['Number'].append(QtWidgets.QLabel(str(self.Nspins)))
@@ -414,7 +382,6 @@ class SpinsysFrame(QtWidgets.QWidget):
         
         self.grid.addWidget(self.spinSysWidgets['Isotope'][-1],5 + self.Nspins,1)
         self.grid.addWidget(self.spinSysWidgets['Number'][-1],5 + self.Nspins,0)
-        
         
         self.spinSysWidgets['Shift'].append(QtWidgets.QLineEdit())
         self.spinSysWidgets['Shift'][-1].setAlignment(QtCore.Qt.AlignHCenter)
@@ -436,7 +403,6 @@ class SpinsysFrame(QtWidgets.QWidget):
         temp[:-1,:-1] = self.Jmatrix
         self.Jmatrix = temp
         self.parseSpinSys(True)
-     
         
     def setJManager(self):
         dialog = setJWindow(self,self.Jmatrix)
@@ -512,7 +478,6 @@ class SpinsysFrame(QtWidgets.QWidget):
             self.sliderWidgets[var][index - 1].setParent( None )
             self.sliderWidgets[var][index - 1] = None
         self.sliderTypes['Type'][index - 1] = None
-
         
     def removeSpin(self,index):
         backup = self.spinSysWidgets.copy()
@@ -544,7 +509,6 @@ class SpinsysFrame(QtWidgets.QWidget):
                     self.sliderWidgets['Slider'][sliderVal].valueChanged.connect((lambda n, m, x: lambda: self.setJ(n,m,x))(Spins[0],Spins[1],sliderVal + 1))
                     self.sliderTypes['Spins'][sliderVal] = Spins
                     self.sliderWidgets['Label'][sliderVal].setText('J (' + str(Spins[0]) + ',' + str(Spins[1]) + ')')
-                    
 
         #Remove sliders via emitting their remove signal
         sliderDelIndex = 0
@@ -584,10 +548,11 @@ class SpinsysFrame(QtWidgets.QWidget):
     def drawSpinSys(self):
         for Spin in range(self.spinSystem['Isotope']):
             self.spinSysWidgets['Isotope']
+
         
 class addIsotopeWindow(QtWidgets.QDialog):
     def __init__(self, parent):
-        QtWidgets.QWidget.__init__(self, parent)
+        super(addIsotopeWindow, self).__init__(parent)
         self.setWindowFlags(QtCore.Qt.Window | QtCore.Qt.Tool)
         self.father = parent
         self.Isotope = ''
@@ -637,9 +602,10 @@ class addIsotopeWindow(QtWidgets.QDialog):
         self.accept()
         self.deleteLater()
 
+
 class setJWindow(QtWidgets.QDialog):
     def __init__(self, parent, Jmatrix):
-        QtWidgets.QWidget.__init__(self, parent)
+        super(setJWindow, self).__init__(parent)
         self.setWindowFlags(QtCore.Qt.Window | QtCore.Qt.Tool)
         self.setWindowTitle("Set J-couplings")
         self.father = parent
@@ -683,15 +649,15 @@ class setJWindow(QtWidgets.QDialog):
                     val = safeEval(self.jInputWidgets[spin][subspin].text())
                     if val == None:
                         return
-                    self.Jmatrix[spin,subspin] = val
-        
+                    self.Jmatrix[spin,subspin] = val        
         self.accept()
         self.deleteLater()
 
 
 class addSliderWindow(QtWidgets.QDialog):
+
     def __init__(self, parent, numSpins):
-        QtWidgets.QWidget.__init__(self, parent)
+        super(addSliderWindow, self).__init__(parent)
         self.setWindowFlags(QtCore.Qt.Window | QtCore.Qt.Tool)
         self.setWindowTitle("Add slider")
         self.father = parent
@@ -703,8 +669,6 @@ class addSliderWindow(QtWidgets.QDialog):
         self.spin1 = 0
         self.spin2 = 0
         grid = QtWidgets.QGridLayout(self)
-        
-
         grid.addWidget(QtWidgets.QLabel('Type:'), 0, 0,QtCore.Qt.AlignHCenter)
         self.typeSetting = QtWidgets.QComboBox()
         self.typeSetting.addItems(['B0 [T]','Shift [ppm]','J-coupling [Hz]'])
@@ -739,7 +703,6 @@ class addSliderWindow(QtWidgets.QDialog):
         grid.addWidget(self.spin2Value, 5, 1)
         self.spin2Value.hide()
         
-        
         cancelButton = QtWidgets.QPushButton("&Cancel")
         cancelButton.clicked.connect(self.closeEvent)
         grid.addWidget(cancelButton, 10, 0)
@@ -748,7 +711,6 @@ class addSliderWindow(QtWidgets.QDialog):
         grid.addWidget(okButton, 10, 1)
         grid.setRowStretch(9, 1)
         self.show()
-
     
     def typeChanged(self):
         self.type = self.typeSetting.currentIndex()
@@ -790,6 +752,7 @@ class addSliderWindow(QtWidgets.QDialog):
         self.accept()
         self.deleteLater()
 
+
 def expandSpinsys(SpinList,Jmatrix):
     NSpins = len(SpinList)
     fullSpinList = []
@@ -815,8 +778,6 @@ def expandSpinsys(SpinList,Jmatrix):
     return fullSpinList, FullJmatrix
 
 
-
-        
 class MainProgram(QtWidgets.QMainWindow):
 
     def __init__(self, root):
@@ -850,22 +811,17 @@ class MainProgram(QtWidgets.QMainWindow):
         self.mainFrame.addWidget(self.settingsFrame, 1, 0)
         self.spinsysFrame = SpinsysFrame(self)
         self.mainFrame.addWidget(self.spinsysFrame, 0, 1,2,1)
-     
-
-        
-        
         self.sim()
+
     def setB0(self,B0):
         self.settingsFrame.B0Setting.setText(str(B0))
         self.settingsFrame.ApplySettings()
-        
         
     def SetRefFreq(self):
         index = ABBREVLIST.index(self.RefNucleus)
         self.RefFreq = freqRatioList[index] * GAMMASCALE * 1e6 * self.B0
         
     def sim(self,ResetXAxis = False, ResetYAxis = False):
-
         if self.SimType == 0: #If exact
             fullSpinList, FullJmatrix = expandSpinsys(self.SpinList,self.Jmatrix)
             SpinSystem = spinSystemCls(fullSpinList, FullJmatrix, self.B0,self.StrongCoupling)
@@ -888,19 +844,4 @@ if __name__ == '__main__':
     mainProgram.setWindowTitle(u"Jellyfish \u2014 J-coupling simulations")
     mainProgram.show()
     sys.exit(root.exec_())
-
-    
-
-        
-   
-
-
-
-
-
-
-
-
-
-
 
