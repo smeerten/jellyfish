@@ -75,35 +75,140 @@ class spinCls:
 
 
 class spinSystemCls:
-    def __init__(self, SpinList, Jmatrix, B0,HighOrder = True):      
+    def __init__(self, SpinList, Jmatrix, B0, RefFreq, HighOrder = True):      
         self.SpinList = SpinList
         self.Jmatrix = Jmatrix
         self.B0 = B0
+        self.RefFreq = RefFreq
         self.HighOrder = HighOrder
         self.GetMatrixSize()
         self.OperatorsFunctions = {'Iz': lambda Spin: Spin.Iz , 'Ix': lambda Spin: Spin.Ix, 'Iy': lambda Spin: Spin.Iy}
-        self.SpinOperators = {}
-        for Operator in self.OperatorsFunctions.keys():
-            self.SpinOperators[Operator] = self.MakeSingleOperator(self.OperatorsFunctions[Operator])
-
-        #Needed
-        self.Htot = self.MakeJhamiltonian() + self.MakeShiftHamil()
-        del self.SpinOperators['Iz'] #del when not needed anymore 
-        self.DetectOp = self.MakeDetect()
-        del self.SpinOperators['Iy'] 
-        self.RhoZero = self.MakeRhoZero()
-        del self.SpinOperators 
-
-
         
+        self.Int, self.Freq = self.GetFreqInt() 
+
+    
+    def GetFreqInt(self):
+        a = time.time() 
+        #Htot = self.MakeJhamiltonian() + self.MakeHshift()
+        Hj = self.MakeJhamiltonian()
+        print('Hj:',str(time.time() - a))
+        a = time.time() 
+        Hs = self.MakeHshift()
+        print('Hs:',str(time.time() - a))
+
+        Htot = Hj + Hs
+        a = time.time() 
+        Hdiag,T = np.linalg.eigh(Htot)
+        print('Diag:',str(time.time() - a))
+        a = time.time() 
+        del Htot
+        Tinv = np.linalg.inv(T)
+        print('Inv:',str(time.time() - a))
+        a = time.time() 
+        
+
+        DetectOp, RhoZero = self.MakeDetectRho()
+        print('Make op:',str(time.time() - a))
+        a = time.time() 
+
+        RhoProp = np.linalg.multi_dot([Tinv , RhoZero , T]) #multi_dot is equally fast in this case, but readable
+        del RhoZero
+        DetectProp = np.linalg.multi_dot([Tinv , DetectOp , T])
+        del T, Tinv, DetectOp
+
+        print('Transfrom op:',str(time.time() - a))
+        a = time.time() 
+
+        RhoProp =  np.tril(RhoProp,1)
+        DetectProp = np.real(DetectProp * RhoProp)
+        del RhoProp
+        print('Edit Transfrom op:',str(time.time() - a))
+        a = time.time() 
+        #Get intensies and frequencies
+
+        Intensities = []
+        Frequencies = []
+
+        for iii in range(DetectProp.shape[0]):
+            for jjj in range(iii):
+                if abs(DetectProp[iii,jjj]) > 1e-9:
+                    Intensities.append(DetectProp[iii,jjj])
+                    Frequencies.append(Hdiag[iii] - Hdiag[jjj] - self.RefFreq)
+
+        print('Get int:',str(time.time() - a))
+        return Intensities, Frequencies
+
+    
+    def MakeHshift(self):
+        HShift = np.zeros(self.MatrixSize)
+        for spin in range(len(self.SpinList)):
+            HShift +=  (self.SpinList[spin].shift * 1e-6 + 1) * self.SpinList[spin].Gamma * self.B0 *  self.MakeSingleOperator2(spin,self.OperatorsFunctions['Iz'])
+        return np.diag(HShift)
+
+    def MakeHshift2(self):
+        #Using intelligent method that avoids Kron
+        HShift = np.zeros(self.MatrixSize)
+        for spin in range(len(self.SpinList)):
+            step = int(self.MatrixSize / (2 ** (spin + 1) ))
+            temp = np.zeros(self.MatrixSize)
+            for iii in range(2 ** (spin + 1)):
+                if iii % 2 == 0: #if even
+                    temp[iii * step: iii * step + step] = 0.5
+                else:
+                    temp[iii * step: iii * step + step] = -0.5
+            HShift += (self.SpinList[spin].shift * 1e-6 + 1) * self.SpinList[spin].Gamma * self.B0 *  temp
+        return np.diag(HShift)
+
+    def MakeJhamiltonian(self):
+        Jmatrix = self.Jmatrix
+        if self.HighOrder:
+            OperatorsFunctions = {'Iz': lambda Spin: Spin.Iz , 'Ix': lambda Spin: Spin.Ix, 'Iy': lambda Spin: Spin.Iy}
+        else:
+            OperatorsFunctions = {'Iz': lambda Spin: Spin.Iz}
+        Jham = np.zeros((self.MatrixSize,self.MatrixSize))
+        for spin in range(len(self.SpinList)):
+            for subspin in range(spin,len(self.SpinList)):
+                    if Jmatrix[spin,subspin] != 0:
+                        temp = np.zeros((self.MatrixSize,self.MatrixSize),dtype=complex)
+                        for operator in OperatorsFunctions.keys():
+                            temp += self.MakeMultipleOperator(OperatorsFunctions[operator],[spin,subspin])
+                        Jham = Jham + Jmatrix[spin,subspin] * temp
+        return Jham
+
+    def MakeDetectRho(self):
+        #Gets the single operators for every spin, and makes the hamiltonian of that spin
+        #Adding the Ham then gives the total Hshift and detect and RhoZero
+        #Doing it this way makes sure the SingleOperators do not coexcist for each spin (which can take a huge amount of memory)
+        Detect = np.zeros((self.MatrixSize,self.MatrixSize),dtype=complex)
+        RhoZero = np.zeros((self.MatrixSize,self.MatrixSize),dtype=float)
+
+        for spin in range(len(self.SpinList)):
+            #Make single spin operator when needed. Only Ix needs to be saved temperarily, as it is used twice 
+
+            if self.SpinList[spin].Detect:
+                Ix =  self.MakeSingleOperator(spin,self.OperatorsFunctions['Ix'])
+                Detect +=  Ix + 1J *  self.MakeSingleOperator(spin,self.OperatorsFunctions['Iy'])
+                RhoZero += Ix
+                del Ix
+
+        return Detect, RhoZero / self.MatrixSize # Scale with Partition Function of boltzmann equation
+
+    def MakeSingleOperator2(self,spin,Operator):
+            IList = []
+            for subspin in range(len(self.SpinList)):
+                if spin == subspin:
+                    IList.append(np.diag(Operator(self.SpinList[subspin])))
+                else:
+                    IList.append(np.diag(self.SpinList[subspin].Ident))
+            
+            return self.kronList(IList)
+
     def GetMatrixSize(self):
         self.MatrixSize = 1
         for spin in self.SpinList:
             self.MatrixSize = int(self.MatrixSize * (spin.I * 2 + 1))
 
-    def MakeSingleOperator(self,Operator):
-        Matrix = np.zeros((len(self.SpinList),self.MatrixSize,self.MatrixSize),dtype=complex)
-        for spin in  range(len(self.SpinList)):
+    def MakeSingleOperator(self,spin,Operator):
             IList = []
             for subspin in range(len(self.SpinList)):
                 if spin == subspin:
@@ -111,8 +216,7 @@ class spinSystemCls:
                 else:
                     IList.append(self.SpinList[subspin].Ident)
             
-            Matrix[spin,:,:] = self.kronList(IList)
-        return Matrix
+            return self.kronList(IList)
 
     def MakeMultipleOperator(self,Operator,SelectList):
        IList = []
@@ -130,65 +234,8 @@ class spinSystemCls:
             M = np.kron(M , element)
         return M
         
-    def MakeShiftHamil(self):
-        Shift = np.zeros((self.MatrixSize,self.MatrixSize))
-        for index in range(len(self.SpinList)):
-            Shift = Shift + (self.SpinList[index].shift * 1e-6 + 1) * self.SpinList[index].Gamma * self.B0 * self.SpinOperators['Iz'][index]
-        return Shift
-        
-    def MakeJhamiltonian(self):
-        Jmatrix = self.Jmatrix
-        if self.HighOrder:
-            OperatorsFunctions = {'Iz': lambda Spin: Spin.Iz , 'Ix': lambda Spin: Spin.Ix, 'Iy': lambda Spin: Spin.Iy}
-        else:
-            OperatorsFunctions = {'Iz': lambda Spin: Spin.Iz}
-        Jham = np.zeros((self.MatrixSize,self.MatrixSize))
-        for spin in range(len(self.SpinList)):
-            for subspin in range(spin,len(self.SpinList)):
-                    if Jmatrix[spin,subspin] != 0:
-                        temp = np.zeros((self.MatrixSize,self.MatrixSize),dtype=complex)
-                        for operator in OperatorsFunctions.keys():
-                            temp += self.MakeMultipleOperator(OperatorsFunctions[operator],[spin,subspin])
-                        Jham = Jham + Jmatrix[spin,subspin] * temp
-        return Jham
-        
-    def MakeDetect(self):
-        Detect = np.zeros((self.MatrixSize,self.MatrixSize))
-        for index in range(len(self.SpinList)):
-            if self.SpinList[index].Detect:
-               Detect =  Detect + self.SpinOperators['Ix'][index] + 1J * self.SpinOperators['Iy'][index]
-        return Detect
-
-    def MakeRhoZero(self):
-        RhoZero = np.zeros((self.MatrixSize,self.MatrixSize))
-        for index in range(len(self.SpinList)):
-            if self.SpinList[index].Detect:
-               RhoZero =  RhoZero + self.SpinOperators['Ix'][index]
-        return RhoZero / self.MatrixSize # Scale with Partition Function of boltzmann equation
-
-def GetFreqInt(SpinSystem,RefFreq):
-    
-    #Make propagators TAKES ALL TIME
-    Hdiag,T = np.linalg.eigh(SpinSystem.Htot)
-    Tinv = np.linalg.inv(T)
-    
-    RhoProp = np.dot(np.dot(Tinv , SpinSystem.RhoZero) , T) #Takes very long
-    RhoProp =  np.tril(RhoProp,1)
-
-    DetectProp = np.real(np.dot(np.dot(Tinv , SpinSystem.DetectOp) , T))
-    DetectProp = np.real(DetectProp * RhoProp)
-    #========== END of ALL TIME
-    #Get intensies and frequencies
-    Intensities = []
-    Frequencies = []
-
-    for iii in range(RhoProp.shape[0]):
-        for jjj in range(iii):
-            if abs(RhoProp[iii,jjj]) > 1e-9:
-                Intensities.append(DetectProp[iii,jjj])
-                Frequencies.append(Hdiag[iii] - Hdiag[jjj] - RefFreq)
-
-    return Intensities, Frequencies
+           
+     
 
 def MakeSpectrum(Intensities, Frequencies, AxisLimits, RefFreq,LineBroadening,NumPoints):
     a = time.time()
@@ -815,13 +862,14 @@ class MainProgram(QtWidgets.QMainWindow):
         self.Jmatrix = None
         self.StrongCoupling = True
         self.SpinList = []
+        self.SpinSys = None
         self.Jmatrix = np.zeros((len(self.SpinList),len(self.SpinList)))
         self.PlotFrame = PlotFrame(self, self.fig, self.canvas)
         self.settingsFrame = SettingsFrame(self)
         self.mainFrame.addWidget(self.settingsFrame, 1, 0)
         self.spinsysFrame = SpinsysFrame(self)
         self.mainFrame.addWidget(self.spinsysFrame, 0, 1,2,1)
-        self.sim()
+        #self.sim()
 
     def setB0(self,B0):
         self.settingsFrame.B0Setting.setText(str(B0))
@@ -835,9 +883,9 @@ class MainProgram(QtWidgets.QMainWindow):
         if self.SimType == 0: #If exact
             if recalc:
                 fullSpinList, FullJmatrix = expandSpinsys(self.SpinList,self.Jmatrix)
-                SpinSystem = spinSystemCls(fullSpinList, FullJmatrix, self.B0,self.StrongCoupling)
-                self.Intensities, self.Frequencies  = GetFreqInt(SpinSystem,self.RefFreq)
-            self.Spectrum, self.Axis, self.RefFreq = MakeSpectrum(self.Intensities, self.Frequencies, self.Limits, self.RefFreq, self.Lb, self.NumPoints)
+                self.SpinSys = spinSystemCls(fullSpinList, FullJmatrix, self.B0,self.RefFreq, self.StrongCoupling)
+                #self.Intensities, self.Frequencies  = GetFreqInt(SpinSystem,self.RefFreq)
+            self.Spectrum, self.Axis, self.RefFreq = MakeSpectrum(self.SpinSys.Int, self.SpinSys.Freq, self.Limits, self.RefFreq, self.Lb, self.NumPoints)
         elif self.SimType == 1: #If homonuclear strong
             self.Spectrum, self.Axis, self.RefFreq = MakeHomoSpectrum(self.SpinList,self.Jmatrix,self.RefFreq,self.B0,self.Limits,self.Lb,self.NumPoints)
             return
