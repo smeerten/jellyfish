@@ -22,7 +22,7 @@ from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 from spectrumFrame import Plot1DFrame
 from safeEval import safeEval
-
+import time
 NSTEPS = 1000
 
 GAMMASCALE = 42.577469 / 100
@@ -85,9 +85,16 @@ class spinSystemCls:
         self.SpinOperators = {}
         for Operator in self.OperatorsFunctions.keys():
             self.SpinOperators[Operator] = self.MakeSingleOperator(self.OperatorsFunctions[Operator])
+
+        #Needed
         self.Htot = self.MakeJhamiltonian() + self.MakeShiftHamil()
+        del self.SpinOperators['Iz'] #del when not needed anymore 
         self.DetectOp = self.MakeDetect()
+        del self.SpinOperators['Iy'] 
         self.RhoZero = self.MakeRhoZero()
+        del self.SpinOperators 
+
+
         
     def GetMatrixSize(self):
         self.MatrixSize = 1
@@ -159,23 +166,18 @@ class spinSystemCls:
                RhoZero =  RhoZero + self.SpinOperators['Ix'][index]
         return RhoZero / self.MatrixSize # Scale with Partition Function of boltzmann equation
 
-
-def MakeSpectrum(SpinSystem,RefFreq,B0,AxisLimits,LineBroadening,NumPoints):
-    Limits = tuple(AxisLimits * RefFreq * 1e-6)
-    sw = Limits[1] - Limits[0]
-    dw = 1.0/ sw
-    lb = LineBroadening
+def GetFreqInt(SpinSystem,RefFreq):
     
-    #Make propagators
+    #Make propagators TAKES ALL TIME
     Hdiag,T = np.linalg.eigh(SpinSystem.Htot)
     Tinv = np.linalg.inv(T)
     
-    RhoProp = np.dot(np.dot(Tinv , SpinSystem.RhoZero) , T)
+    RhoProp = np.dot(np.dot(Tinv , SpinSystem.RhoZero) , T) #Takes very long
     RhoProp =  np.tril(RhoProp,1)
 
     DetectProp = np.real(np.dot(np.dot(Tinv , SpinSystem.DetectOp) , T))
-    AllInts = np.real(DetectProp * RhoProp)
-    
+    DetectProp = np.real(DetectProp * RhoProp)
+    #========== END of ALL TIME
     #Get intensies and frequencies
     Intensities = []
     Frequencies = []
@@ -183,9 +185,17 @@ def MakeSpectrum(SpinSystem,RefFreq,B0,AxisLimits,LineBroadening,NumPoints):
     for iii in range(RhoProp.shape[0]):
         for jjj in range(iii):
             if abs(RhoProp[iii,jjj]) > 1e-9:
-                Intensities.append(AllInts[iii,jjj])
+                Intensities.append(DetectProp[iii,jjj])
                 Frequencies.append(Hdiag[iii] - Hdiag[jjj] - RefFreq)
 
+    return Intensities, Frequencies
+
+def MakeSpectrum(Intensities, Frequencies, AxisLimits, RefFreq,LineBroadening,NumPoints):
+    a = time.time()
+    Limits = tuple(AxisLimits * RefFreq * 1e-6)
+    sw = Limits[1] - Limits[0]
+    dw = 1.0/ sw
+    lb = LineBroadening
     #Make spectrum
     Spectrum, Axis = np.histogram(Frequencies, int(NumPoints), Limits , weights = Intensities)
     
@@ -282,14 +292,14 @@ class SettingsFrame(QtWidgets.QWidget):
         self.LbSetting = QtWidgets.QLineEdit(self)
         self.LbSetting.setAlignment(QtCore.Qt.AlignHCenter)
         self.LbSetting.setText(str(self.father.Lb))
-        self.LbSetting.returnPressed.connect(self.ApplySettings)
+        self.LbSetting.returnPressed.connect(lambda: self.ApplySettings(False,False))
         grid.addWidget(self.LbSetting, 1, 1)
         
         grid.addWidget(QtWidgets.QLabel("# Points [x1024]:"), 0, 2,QtCore.Qt.AlignHCenter)
         self.NumPointsSetting = QtWidgets.QLineEdit(self)
         self.NumPointsSetting.setAlignment(QtCore.Qt.AlignHCenter)
         self.NumPointsSetting.setText(str(int(self.father.NumPoints/1024)))
-        self.NumPointsSetting.returnPressed.connect(self.ApplySettings)
+        self.NumPointsSetting.returnPressed.connect(lambda: self.ApplySettings(False,False))
         grid.addWidget(self.NumPointsSetting, 0, 3)
            
         grid.addWidget(QtWidgets.QLabel("Ref Nucleus:"), 1, 2,QtCore.Qt.AlignHCenter)
@@ -304,14 +314,14 @@ class SettingsFrame(QtWidgets.QWidget):
         self.XminSetting = QtWidgets.QLineEdit(self)
         self.XminSetting.setAlignment(QtCore.Qt.AlignHCenter)
         self.XminSetting.setText(str(self.father.Limits[0]))
-        self.XminSetting.returnPressed.connect(lambda: self.ApplySettings(True))
+        self.XminSetting.returnPressed.connect(lambda: self.ApplySettings(True,False))
         grid.addWidget(self.XminSetting, 0, 5)
         
         grid.addWidget(QtWidgets.QLabel("x Max [ppm]:"), 1, 4,QtCore.Qt.AlignHCenter)
         self.XmaxSetting = QtWidgets.QLineEdit(self)
         self.XmaxSetting.setAlignment(QtCore.Qt.AlignHCenter)
         self.XmaxSetting.setText(str(self.father.Limits[1]))
-        self.XmaxSetting.returnPressed.connect(lambda: self.ApplySettings(True))
+        self.XmaxSetting.returnPressed.connect(lambda: self.ApplySettings(True,False))
         grid.addWidget(self.XmaxSetting, 1, 5)
         
         grid.setColumnStretch(10, 1)
@@ -325,7 +335,7 @@ class SettingsFrame(QtWidgets.QWidget):
         
         
         
-    def ApplySettings(self,ResetAxis = False):
+    def ApplySettings(self,ResetAxis = False, recalc = True):
         self.father.B0 = safeEval(self.B0Setting.text())
         self.father.RefNucleus = ABBREVLIST[self.RefNucleusSettings.currentIndex()]
         self.father.SetRefFreq()
@@ -337,7 +347,7 @@ class SettingsFrame(QtWidgets.QWidget):
         
         self.father.Limits[0] = float(self.XminSetting.text())
         self.father.Limits[1] = float(self.XmaxSetting.text())
-        self.father.sim(ResetAxis)
+        self.father.sim(ResetAxis, recalc = recalc)
 
 
 class SpinsysFrame(QtWidgets.QWidget):
@@ -821,11 +831,13 @@ class MainProgram(QtWidgets.QMainWindow):
         index = ABBREVLIST.index(self.RefNucleus)
         self.RefFreq = freqRatioList[index] * GAMMASCALE * 1e6 * self.B0
         
-    def sim(self,ResetXAxis = False, ResetYAxis = False):
+    def sim(self,ResetXAxis = False, ResetYAxis = False, recalc = True):
         if self.SimType == 0: #If exact
-            fullSpinList, FullJmatrix = expandSpinsys(self.SpinList,self.Jmatrix)
-            SpinSystem = spinSystemCls(fullSpinList, FullJmatrix, self.B0,self.StrongCoupling)
-            self.Spectrum, self.Axis, self.RefFreq = MakeSpectrum(SpinSystem,self.RefFreq,self.B0,self.Limits,self.Lb,self.NumPoints)
+            if recalc:
+                fullSpinList, FullJmatrix = expandSpinsys(self.SpinList,self.Jmatrix)
+                SpinSystem = spinSystemCls(fullSpinList, FullJmatrix, self.B0,self.StrongCoupling)
+                self.Intensities, self.Frequencies  = GetFreqInt(SpinSystem,self.RefFreq)
+            self.Spectrum, self.Axis, self.RefFreq = MakeSpectrum(self.Intensities, self.Frequencies, self.Limits, self.RefFreq, self.Lb, self.NumPoints)
         elif self.SimType == 1: #If homonuclear strong
             self.Spectrum, self.Axis, self.RefFreq = MakeHomoSpectrum(self.SpinList,self.Jmatrix,self.RefFreq,self.B0,self.Limits,self.Lb,self.NumPoints)
             return
