@@ -89,15 +89,14 @@ class spinSystemCls:
     
     def GetFreqInt(self):
         a = time.time() 
-        #Htot = self.MakeJhamiltonian() + self.MakeHshift()
         Hj = self.MakeJhamiltonian()
         print('Hj:',str(time.time() - a))
         a = time.time() 
         Hs = self.MakeHshift()
         print('Hs:',str(time.time() - a))
-
-        Htot = Hj + Hs
         a = time.time() 
+        Htot = Hj + Hs
+        del Hj, Hs
         Hdiag,T = np.linalg.eigh(Htot)
         print('Diag:',str(time.time() - a))
         a = time.time() 
@@ -142,11 +141,12 @@ class spinSystemCls:
     def MakeHshift(self):
         HShift = np.zeros(self.MatrixSize)
         for spin in range(len(self.SpinList)):
-            HShift +=  (self.SpinList[spin].shift * 1e-6 + 1) * self.SpinList[spin].Gamma * self.B0 *  self.MakeSingleOperator2(spin,self.OperatorsFunctions['Iz'])
+            HShift +=  (self.SpinList[spin].shift * 1e-6 + 1) * self.SpinList[spin].Gamma * self.B0 *  self.MakeSingleIz(spin,self.OperatorsFunctions['Iz'])
         return np.diag(HShift)
 
     def MakeHshift2(self):
-        #Using intelligent method that avoids Kron
+        #Using intelligent method that avoids Kron, only slightly faster then 1D kron
+        #Spin 1/2 only atm
         HShift = np.zeros(self.MatrixSize)
         for spin in range(len(self.SpinList)):
             step = int(self.MatrixSize / (2 ** (spin + 1) ))
@@ -161,6 +161,7 @@ class spinSystemCls:
 
     def MakeJhamiltonian(self):
         Jmatrix = self.Jmatrix
+        check =True
         if self.HighOrder:
             OperatorsFunctions = {'Iz': lambda Spin: Spin.Iz , 'Ix': lambda Spin: Spin.Ix, 'Iy': lambda Spin: Spin.Iy}
         else:
@@ -170,8 +171,18 @@ class spinSystemCls:
             for subspin in range(spin,len(self.SpinList)):
                     if Jmatrix[spin,subspin] != 0:
                         temp = np.zeros((self.MatrixSize,self.MatrixSize),dtype=complex)
-                        for operator in OperatorsFunctions.keys():
-                            temp += self.MakeMultipleOperator(OperatorsFunctions[operator],[spin,subspin])
+                        temp += np.diag(self.MakeMultipleIz(OperatorsFunctions['Iz'],[spin,subspin]))
+
+                        if self.HighOrder:
+                            print(check)
+                            check += 1
+
+                                #print(spin,subspin)
+                                #print(self.MakeMultipleOperator2off(OperatorsFunctions['Ix'],[spin,subspin]))
+                                #print(self.MakeMultipleOperator(OperatorsFunctions['Ix'],[spin,subspin]))
+                                #check = False
+                            temp += self.MakeMultipleOperator(OperatorsFunctions['Ix'],[spin,subspin])
+                            temp += self.MakeMultipleOperator(OperatorsFunctions['Iy'],[spin,subspin])
                         Jham = Jham + Jmatrix[spin,subspin] * temp
         return Jham
 
@@ -181,19 +192,19 @@ class spinSystemCls:
         #Doing it this way makes sure the SingleOperators do not coexcist for each spin (which can take a huge amount of memory)
         Detect = np.zeros((self.MatrixSize,self.MatrixSize),dtype=complex)
         RhoZero = np.zeros((self.MatrixSize,self.MatrixSize),dtype=float)
-
         for spin in range(len(self.SpinList)):
             #Make single spin operator when needed. Only Ix needs to be saved temperarily, as it is used twice 
 
             if self.SpinList[spin].Detect:
-                Ix =  self.MakeSingleOperator(spin,self.OperatorsFunctions['Ix'])
-                Detect +=  Ix + 1J *  self.MakeSingleOperator(spin,self.OperatorsFunctions['Iy'])
-                RhoZero += Ix
+                Ix =  self.MakeSingleIxy(spin,self.OperatorsFunctions['Ix'],'Ix')
+                Detect +=  Ix + 1J *  self.MakeSingleIxy(spin,self.OperatorsFunctions['Iy'],'Iy')
+                RhoZero = RhoZero + Ix
                 del Ix
 
         return Detect, RhoZero / self.MatrixSize # Scale with Partition Function of boltzmann equation
 
-    def MakeSingleOperator2(self,spin,Operator):
+    def MakeSingleIz(self,spin,Operator):
+        #Optimized for Iz: 1D kron only
             IList = []
             for subspin in range(len(self.SpinList)):
                 if spin == subspin:
@@ -203,20 +214,41 @@ class spinSystemCls:
             
             return self.kronList(IList)
 
-    def GetMatrixSize(self):
-        self.MatrixSize = 1
-        for spin in self.SpinList:
-            self.MatrixSize = int(self.MatrixSize * (spin.I * 2 + 1))
 
     def MakeSingleOperator(self,spin,Operator):
-            IList = []
-            for subspin in range(len(self.SpinList)):
-                if spin == subspin:
-                    IList.append(Operator(self.SpinList[subspin]))
-                else:
-                    IList.append(self.SpinList[subspin].Ident)
-            
+            list = [i for i in range(len(self.SpinList))]
+            beforelength = 1
+            for iii in list[0:spin]:
+                beforelength *= int(self.SpinList[iii].I * 2 + 1)
+            afterlength = 1
+
+            for jjj in list[spin + 1:]:
+                afterlength *= int(self.SpinList[jjj].I * 2 + 1)
+
+            IList = [np.eye(beforelength) ,Operator(self.SpinList[spin]) , np.eye(afterlength)]
             return self.kronList(IList)
+
+    def MakeSingleIxy(self,spin,Operator,Type):
+        #Optimized routine to get Ix|Iy for a single spin
+        a = time.time()
+        list = [i for i in range(len(self.SpinList))]
+        beforelength = 1
+        for iii in list[0:spin]:
+            beforelength *= int(self.SpinList[iii].I * 2 + 1)
+
+        afterlength = 1
+        for jjj in list[spin + 1:]:
+            afterlength *= int(self.SpinList[jjj].I * 2 + 1)
+
+        Op = Operator(self.SpinList[spin])
+        Pre = np.append(np.diag(Op,1),0)
+        Pre = np.tile(np.repeat(Pre,afterlength), beforelength)
+        Pre = Pre[:-afterlength]
+        if Type == 'Ix':
+            Pre = np.diag(Pre,afterlength) + np.diag(Pre, -afterlength)
+        else:
+            Pre = -1J * np.diag(Pre,afterlength) + 1J * np.diag(Pre, -afterlength)
+        return Pre
 
     def MakeMultipleOperator(self,Operator,SelectList):
        IList = []
@@ -227,13 +259,37 @@ class spinSystemCls:
                IList.append(self.SpinList[spin].Ident)
        Matrix = self.kronList(IList)
        return Matrix
-   
+
+    def MakeMultipleIz(self,Operator,SelectList):
+       IList = []
+       for spin in  range(len(self.SpinList)):
+           if spin in SelectList:
+               IList.append(np.diag(Operator(self.SpinList[spin])))
+           else:
+               IList.append(np.diag(self.SpinList[spin].Ident))
+       Matrix = self.kronList(IList)
+       return Matrix
+
+    def MakeMultipleOperator2off(self,Operator,SelectList):
+       IList = []
+       for spin in  range(len(self.SpinList)):
+           if spin in SelectList:
+               IList.append(np.diag(np.fliplr(Operator(self.SpinList[spin]))))
+           else:
+               IList.append(np.diag(self.SpinList[spin].Ident))
+       Matrix = self.kronList(IList)
+       return Matrix
+
     def kronList(self,List):
         M = 1
         for element in List:
             M = np.kron(M , element)
         return M
         
+    def GetMatrixSize(self):
+        self.MatrixSize = 1
+        for spin in self.SpinList:
+            self.MatrixSize = int(self.MatrixSize * (spin.I * 2 + 1))
            
      
 
