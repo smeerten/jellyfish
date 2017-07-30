@@ -97,6 +97,27 @@ class spinSystemCls:
         a = time.time() 
         Htot = Hj + Hs
         del Hj, Hs
+
+        #Check for blocks in Htot
+        #Length = Htot.shape[0]
+        #CheckMatrix = Htot != 0 
+        #List = []
+        #for row in range(Length):
+        #    elements = np.where(CheckMatrix[row,:] == True)[0]
+        #    new = True
+        #    for Set in List:
+        #        for elem in elements:
+        #            if new:
+        #                if elem in Set:
+        #                    Set = Set | set(elements)
+        #                    new = False
+        #    if new:
+        #        List.append(set(elements))
+        #print(len(List))
+        #print('Block:',str(time.time() - a))
+        #a = time.time() 
+        #===================
+
         Hdiag,T = np.linalg.eigh(Htot)
         print('Diag:',str(time.time() - a))
         a = time.time() 
@@ -187,19 +208,17 @@ class spinSystemCls:
         return Jham
 
     def MakeDetectRho(self):
-        #Gets the single operators for every spin, and makes the hamiltonian of that spin
-        #Adding the Ham then gives the total Hshift and detect and RhoZero
-        #Doing it this way makes sure the SingleOperators do not coexcist for each spin (which can take a huge amount of memory)
         Detect = np.zeros((self.MatrixSize,self.MatrixSize),dtype=complex)
         RhoZero = np.zeros((self.MatrixSize,self.MatrixSize),dtype=float)
+        i,j = np.indices(Detect.shape)
         for spin in range(len(self.SpinList)):
             #Make single spin operator when needed. Only Ix needs to be saved temperarily, as it is used twice 
 
             if self.SpinList[spin].Detect:
-                Ix =  self.MakeSingleIxy(spin,self.OperatorsFunctions['Ix'],'Ix')
-                Detect +=  Ix + 1J *  self.MakeSingleIxy(spin,self.OperatorsFunctions['Iy'],'Iy')
-                RhoZero = RhoZero + Ix
-                del Ix
+                Line, Pos =  self.MakeSingleIxy(spin,self.OperatorsFunctions['Ix'],'Ix')
+                Detect[i == j - Pos] =  2 * Line
+                #RhoZero[i == j + Pos] =  Line #Seems not to be nesessary (tril is taken later(after dot commands))
+                RhoZero[i == j - Pos] =  Line
 
         return Detect, RhoZero / self.MatrixSize # Scale with Partition Function of boltzmann equation
 
@@ -229,7 +248,9 @@ class spinSystemCls:
             return self.kronList(IList)
 
     def MakeSingleIxy(self,spin,Operator,Type):
-        #Optimized routine to get Ix|Iy for a single spin
+        #Optimized routine to get Ix|Y for a single spin
+        #Returned are the values, and the level of the diagonal were it should be positioned
+        #Only Iy and Ix can be constructed from this.
         a = time.time()
         list = [i for i in range(len(self.SpinList))]
         beforelength = 1
@@ -244,11 +265,7 @@ class spinSystemCls:
         Pre = np.append(np.diag(Op,1),0)
         Pre = np.tile(np.repeat(Pre,afterlength), beforelength)
         Pre = Pre[:-afterlength]
-        if Type == 'Ix':
-            Pre = np.diag(Pre,afterlength) + np.diag(Pre, -afterlength)
-        else:
-            Pre = -1J * np.diag(Pre,afterlength) + 1J * np.diag(Pre, -afterlength)
-        return Pre
+        return Pre, afterlength
 
     def MakeMultipleOperator(self,Operator,SelectList):
        IList = []
