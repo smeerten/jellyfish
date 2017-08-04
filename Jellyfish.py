@@ -151,7 +151,7 @@ class spinSystemCls:
 
         for iii in range(DetectProp.shape[0]):
             for jjj in range(iii):
-                if abs(DetectProp[iii,jjj]) > 1e-9:
+                #if abs(DetectProp[iii,jjj]) > 1e-9:
                     Intensities.append(DetectProp[iii,jjj])
                     Frequencies.append(Hdiag[iii] - Hdiag[jjj] - self.RefFreq)
 
@@ -198,14 +198,43 @@ class spinSystemCls:
                             print(check)
                             check += 1
 
-                                #print(spin,subspin)
+                            #print(spin,subspin)
                                 #print(self.MakeMultipleOperator2off(OperatorsFunctions['Ix'],[spin,subspin]))
                                 #print(self.MakeMultipleOperator(OperatorsFunctions['Ix'],[spin,subspin]))
                                 #check = False
                             temp += self.MakeMultipleOperator(OperatorsFunctions['Ix'],[spin,subspin])
+                            print(self.MakeMultipleOperator(OperatorsFunctions['Ix'],[spin,subspin]))
+                            print(self.MakeDoubleIxy(OperatorsFunctions['Ix'],spin,subspin))
                             temp += self.MakeMultipleOperator(OperatorsFunctions['Iy'],[spin,subspin])
                         Jham = Jham + Jmatrix[spin,subspin] * temp
         return Jham
+
+    def MakeDoubleIxy(self,Operator,spin,subspin):
+        list = [i for i in range(len(self.SpinList))]
+        beforelength = 1
+        for iii in list[0:spin]:
+            beforelength *= int(self.SpinList[iii].I * 2 + 1)
+
+        afterlength = 1
+        for jjj in list[spin + 1:subspin]:
+            afterlength *= int(self.SpinList[jjj].I * 2 + 1)
+
+        Op1 = Operator(self.SpinList[spin])
+        Op2 = Operator(self.SpinList[subspin])
+
+        Pre = np.append(np.diag(Op1,1),0)
+        Pre = np.tile(np.repeat(Pre,afterlength), beforelength)
+        
+        val1 = np.diag(Op1,1)
+        val2 = np.diag(Op2,1)
+        tot = []
+        for i in val1:
+            [tot.append(d) for d in val2 * i]
+            tot.append(0)
+        print('df',tot)
+        #Pre = Pre[:-afterlength]
+        #return Pre, afterlength
+        return None
 
     def MakeDetectRho(self):
         Detect = np.zeros((self.MatrixSize,self.MatrixSize),dtype=complex)
@@ -251,7 +280,6 @@ class spinSystemCls:
         #Optimized routine to get Ix|Y for a single spin
         #Returned are the values, and the level of the diagonal were it should be positioned
         #Only Iy and Ix can be constructed from this.
-        a = time.time()
         list = [i for i in range(len(self.SpinList))]
         beforelength = 1
         for iii in list[0:spin]:
