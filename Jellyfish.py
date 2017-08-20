@@ -182,59 +182,66 @@ class spinSystemCls:
 
     def MakeJhamiltonian(self):
         Jmatrix = self.Jmatrix
-        check =True
         if self.HighOrder:
             OperatorsFunctions = {'Iz': lambda Spin: Spin.Iz , 'Ix': lambda Spin: Spin.Ix, 'Iy': lambda Spin: Spin.Iy}
         else:
             OperatorsFunctions = {'Iz': lambda Spin: Spin.Iz}
+      
         Jham = np.zeros((self.MatrixSize,self.MatrixSize))
+        i,j = np.indices(Jham.shape)
+
         for spin in range(len(self.SpinList)):
             for subspin in range(spin,len(self.SpinList)):
                     if Jmatrix[spin,subspin] != 0:
-                        temp = np.zeros((self.MatrixSize,self.MatrixSize),dtype=complex)
-                        temp += np.diag(self.MakeMultipleIz(OperatorsFunctions['Iz'],[spin,subspin]))
+                        Jham[i == j] += self.MakeMultipleIz(OperatorsFunctions['Iz'],[spin,subspin]) * Jmatrix[spin,subspin]
 
                         if self.HighOrder:
-                            print(check)
-                            check += 1
+                            if self.SpinList[spin].I == 0.5 and self.SpinList[subspin].I == 0.5:
+                                Line, order = self.MakeDoubleIxy(OperatorsFunctions['Ix'],spin,subspin)
+                                Jham[i == j + order] = Line * Jmatrix[spin,subspin] #Only low diag is needed for Ham (eigh assumes this)
+                            else:
+                                Jham = Jham + (self.MakeMultipleOperator(OperatorsFunctions['Ix'],[spin,subspin]) + self.MakeMultipleOperator(OperatorsFunctions['Iy'],[spin,subspin])) * Jmatrix[spin,subspin]
 
-                            #print(spin,subspin)
-                                #print(self.MakeMultipleOperator2off(OperatorsFunctions['Ix'],[spin,subspin]))
-                                #print(self.MakeMultipleOperator(OperatorsFunctions['Ix'],[spin,subspin]))
-                                #check = False
-                            temp += self.MakeMultipleOperator(OperatorsFunctions['Ix'],[spin,subspin])
-                            print(self.MakeMultipleOperator(OperatorsFunctions['Ix'],[spin,subspin]))
-                            print(self.MakeDoubleIxy(OperatorsFunctions['Ix'],spin,subspin))
-                            temp += self.MakeMultipleOperator(OperatorsFunctions['Iy'],[spin,subspin])
-                        Jham = Jham + Jmatrix[spin,subspin] * temp
         return Jham
 
-    def MakeDoubleIxy(self,Operator,spin,subspin):
+    def MakeDoubleIxy(self,Ix,spin,subspin):
         list = [i for i in range(len(self.SpinList))]
         beforelength = 1
         for iii in list[0:spin]:
             beforelength *= int(self.SpinList[iii].I * 2 + 1)
 
-        afterlength = 1
+        middlelength = 1
         for jjj in list[spin + 1:subspin]:
-            afterlength *= int(self.SpinList[jjj].I * 2 + 1)
+            middlelength *= int(self.SpinList[jjj].I * 2 + 1)
 
-        Op1 = Operator(self.SpinList[spin])
-        Op2 = Operator(self.SpinList[subspin])
+        afterlength = 1
+        for kkk in list[subspin + 1:]:
+            afterlength *= int(self.SpinList[kkk].I * 2 + 1)
 
-        Pre = np.append(np.diag(Op1,1),0)
-        Pre = np.tile(np.repeat(Pre,afterlength), beforelength)
+        I1x = Ix(self.SpinList[spin])
+        I2x = Ix(self.SpinList[subspin])
         
-        val1 = np.diag(Op1,1)
-        val2 = np.diag(Op2,1)
-        tot = []
-        for i in val1:
-            [tot.append(d) for d in val2 * i]
-            tot.append(0)
-        print('df',tot)
-        #Pre = Pre[:-afterlength]
-        #return Pre, afterlength
-        return None
+        Isize = I1x.shape[0]
+        I2size = I2x.shape[0]
+
+        Pre = np.diag(I1x*I2x,1)
+        Pre = np.append(Pre,0)
+
+
+        Pre = np.tile(np.repeat(Pre,middlelength), beforelength)
+        Pre = np.insert(Pre,np.arange(1,len(Pre)),0)
+        Pre = np.repeat(Pre,afterlength)
+
+        orderM = (middlelength*I2size - 1) * afterlength #Only the -1 diagonal is needed, as Ix + Iy cancel the other (and doubles the -1)
+        orderP = (middlelength*I2size + 1) * afterlength
+        
+        Pre = np.append([0] * int((orderP-orderM)/2) , Pre)
+
+        totlength = Isize * I2size * beforelength * middlelength * afterlength
+        length = totlength - orderM
+        Pre = Pre[:length]
+
+        return 2 * Pre, orderM #double the result to simulate Ix + Iy
 
     def MakeDetectRho(self):
         Detect = np.zeros((self.MatrixSize,self.MatrixSize),dtype=complex)
