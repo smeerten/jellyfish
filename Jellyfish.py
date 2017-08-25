@@ -89,60 +89,105 @@ class spinSystemCls:
     
     def GetFreqInt(self):
         a = time.time() 
-        Hj = self.MakeJhamiltonian()
-        print('Hj:',str(time.time() - a))
-        a = time.time() 
-        Hs = self.MakeHshift()
-        print('Hs:',str(time.time() - a))
-        a = time.time() 
-        Htot = Hj + Hs
-        del Hj, Hs
+        Htot = self.MakeH()
+        print('Ham:',str(time.time() - a))
 
+        a = time.time() 
         #Check for blocks in Htot
-        #Length = Htot.shape[0]
-        #CheckMatrix = Htot != 0 
-        #List = []
-        #for row in range(Length):
-        #    elements = np.where(CheckMatrix[row,:] == True)[0]
-        #    new = True
-        #    for Set in List:
-        #        for elem in elements:
-        #            if new:
-        #                if elem in Set:
-        #                    Set = Set | set(elements)
-        #                    new = False
-        #    if new:
-        #        List.append(set(elements))
-        #print(len(List))
-        #print('Block:',str(time.time() - a))
-        #a = time.time() 
+        Length = Htot.shape[0]
+        CheckMatrix = Htot != 0 
+        List = []
+        for row in range(Length):
+            elements = np.where(CheckMatrix[row,:] == True)
+            elements = np.append(elements,row) #append diagonal (shift energy might be zero)
+            elements = set(elements)
+            new = True
+            for Set in range(len(List)):
+                if new:
+                    if len(elements & List[Set]) > 0:
+                        List[Set] = List[Set] | elements
+                        new = False
+            if new:
+                List.append(elements)
+        print('Block:',str(time.time() - a))
+        a = time.time() 
+        for iii in range(len(List)): #Convert sets to np.array
+            List[iii] = np.array(list(List[iii]))
+        print('set to array:',str(time.time() - a))
+        a = time.time() 
+
+        Blocks = []
+        BlocksDiag = []
+        BlocksT = []
+        BlocksInvT = []
+        for Blk in List:
+            Blocks.append(Htot[Blk,:])
+            Blocks[-1] = Blocks[-1][:,Blk]
+            tmp1, tmp2 = np.linalg.eigh(Blocks[-1])
+            BlocksDiag.append(tmp1)
+            BlocksT.append(tmp2)
+            BlocksInvT.append(np.linalg.inv(tmp2))
+
+
+        print('Block treatment:',str(time.time() - a))
+        a = time.time() 
+
         #===================
 
         Hdiag,T = np.linalg.eigh(Htot)
         print('Diag:',str(time.time() - a))
         a = time.time() 
-        del Htot
+        #del Htot
         Tinv = np.linalg.inv(T)
         print('Inv:',str(time.time() - a))
         a = time.time() 
         
 
         DetectOp, RhoZero = self.MakeDetectRho()
+        print(DetectOp)
         print('Make op:',str(time.time() - a))
         a = time.time() 
+
+        #Blocks detect
+        DetectBlocks = []
+        parts = np.array([],dtype=int)
+        for iii in range(len(List)):
+            parts = np.append(parts,List[iii])
+        print(parts)
+        tmp = Htot[:,parts]
+        tmp = tmp[parts,:]
+        print(Htot)
+        print(tmp)
+        #for iii in range(len(List)):
+        #    Blk = List[iii]
+        #    Det = DetectOp[:,Blk]
+        #    Det = Det[Blk,:]
+        #    Rho = RhoZero[:,Blk]
+        #    Rho = Rho[Blk,:]
+
+        #    RPropBlk = np.linalg.multi_dot([BlocksInvT[iii] , Rho , BlocksT[iii]])
+        #    DPropBlk = np.linalg.multi_dot([BlocksInvT[iii] , Det , BlocksT[iii]])
+
+        #    RPropBlk = np.tril(RPropBlk,1)
+        #    DetectBlocks.append(np.real(RPropBlk * DPropBlk))
+        #    print(Det)
+
+        print('Detect blocks:',str(time.time() - a))
+        a = time.time() 
+        #=======================
 
         RhoProp = np.linalg.multi_dot([Tinv , RhoZero , T]) #multi_dot is equally fast in this case, but readable
         del RhoZero
         DetectProp = np.linalg.multi_dot([Tinv , DetectOp , T])
         del T, Tinv, DetectOp
 
-        print('Transfrom op:',str(time.time() - a))
+        print('Transform op:',str(time.time() - a))
         a = time.time() 
 
         RhoProp =  np.tril(RhoProp,1)
         DetectProp = np.real(DetectProp * RhoProp)
         del RhoProp
-        print('Edit Transfrom op:',str(time.time() - a))
+        print('Edit Transform op:',str(time.time() - a))
         a = time.time() 
         #Get intensies and frequencies
 
@@ -157,13 +202,6 @@ class spinSystemCls:
 
         print('Get int:',str(time.time() - a))
         return Intensities, Frequencies
-
-    
-    def MakeHshift(self):
-        HShift = np.zeros(self.MatrixSize)
-        for spin in range(len(self.SpinList)):
-            HShift +=  (self.SpinList[spin].shift * 1e-6 + 1) * self.SpinList[spin].Gamma * self.B0 *  self.MakeSingleIz(spin,self.OperatorsFunctions['Iz'])
-        return np.diag(HShift)
 
     def MakeHshift2(self):
         #Using intelligent method that avoids Kron, only slightly faster then 1D kron
@@ -180,29 +218,38 @@ class spinSystemCls:
             HShift += (self.SpinList[spin].shift * 1e-6 + 1) * self.SpinList[spin].Gamma * self.B0 *  temp
         return np.diag(HShift)
 
-    def MakeJhamiltonian(self):
+    def MakeH(self):
         Jmatrix = self.Jmatrix
+
         if self.HighOrder:
             OperatorsFunctions = {'Iz': lambda Spin: Spin.Iz , 'Ix': lambda Spin: Spin.Ix, 'Iy': lambda Spin: Spin.Iy}
         else:
             OperatorsFunctions = {'Iz': lambda Spin: Spin.Iz}
       
-        Jham = np.zeros((self.MatrixSize,self.MatrixSize))
-        i,j = np.indices(Jham.shape)
+        Ham = np.zeros((self.MatrixSize,self.MatrixSize))
+        i,j = np.indices(Ham.shape)
+
+        #Make shift
+        HShift = np.zeros(self.MatrixSize)
+        for spin in range(len(self.SpinList)):
+            HShift +=  (self.SpinList[spin].shift * 1e-6 + 1) * self.SpinList[spin].Gamma * self.B0 *  self.MakeSingleIz(spin,self.OperatorsFunctions['Iz'])
+        Ham[i==j] = HShift
+
 
         for spin in range(len(self.SpinList)):
             for subspin in range(spin,len(self.SpinList)):
                     if Jmatrix[spin,subspin] != 0:
-                        Jham[i == j] += self.MakeMultipleIz(OperatorsFunctions['Iz'],[spin,subspin]) * Jmatrix[spin,subspin]
+                        Ham[i == j] += self.MakeMultipleIz(OperatorsFunctions['Iz'],[spin,subspin]) * Jmatrix[spin,subspin]
 
                         if self.HighOrder:
                             if self.SpinList[spin].I == 0.5 and self.SpinList[subspin].I == 0.5:
                                 Line, order = self.MakeDoubleIxy(OperatorsFunctions['Ix'],spin,subspin)
-                                Jham[i == j + order] = Line * Jmatrix[spin,subspin] #Only low diag is needed for Ham (eigh assumes this)
+                                Ham[i == j + order] = Line * Jmatrix[spin,subspin] #Only low diag is needed for Ham (eigh assumes this)
+                                Ham[i == j - order] = Line * Jmatrix[spin,subspin] #Only low diag is needed for Ham (eigh assumes this)
                             else:
-                                Jham = Jham + (self.MakeMultipleOperator(OperatorsFunctions['Ix'],[spin,subspin]) + self.MakeMultipleOperator(OperatorsFunctions['Iy'],[spin,subspin])) * Jmatrix[spin,subspin]
+                                Ham = Ham + (self.MakeMultipleOperator(OperatorsFunctions['Ix'],[spin,subspin]) + self.MakeMultipleOperator(OperatorsFunctions['Iy'],[spin,subspin])) * Jmatrix[spin,subspin]
 
-        return Jham
+        return Ham
 
     def MakeDoubleIxy(self,Ix,spin,subspin):
         list = [i for i in range(len(self.SpinList))]
@@ -248,12 +295,12 @@ class spinSystemCls:
         RhoZero = np.zeros((self.MatrixSize,self.MatrixSize),dtype=float)
         i,j = np.indices(Detect.shape)
         for spin in range(len(self.SpinList)):
-            #Make single spin operator when needed. Only Ix needs to be saved temperarily, as it is used twice 
+            #Make single spin operator when needed. Only Ix needs to be saved temporarily, as it is used twice 
 
             if self.SpinList[spin].Detect:
                 Line, Pos =  self.MakeSingleIxy(spin,self.OperatorsFunctions['Ix'],'Ix')
                 Detect[i == j - Pos] =  2 * Line
-                #RhoZero[i == j + Pos] =  Line #Seems not to be nesessary (tril is taken later(after dot commands))
+                #RhoZero[i == j + Pos] =  Line #Seems not to be necessary (tril is taken later(after dot commands))
                 RhoZero[i == j - Pos] =  Line
 
         return Detect, RhoZero / self.MatrixSize # Scale with Partition Function of boltzmann equation
@@ -317,16 +364,6 @@ class spinSystemCls:
        for spin in  range(len(self.SpinList)):
            if spin in SelectList:
                IList.append(np.diag(Operator(self.SpinList[spin])))
-           else:
-               IList.append(np.diag(self.SpinList[spin].Ident))
-       Matrix = self.kronList(IList)
-       return Matrix
-
-    def MakeMultipleOperator2off(self,Operator,SelectList):
-       IList = []
-       for spin in  range(len(self.SpinList)):
-           if spin in SelectList:
-               IList.append(np.diag(np.fliplr(Operator(self.SpinList[spin]))))
            else:
                IList.append(np.diag(self.SpinList[spin].Ident))
        Matrix = self.kronList(IList)
