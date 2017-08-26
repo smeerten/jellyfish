@@ -83,16 +83,14 @@ class spinSystemCls:
         self.HighOrder = HighOrder
         self.GetMatrixSize()
         self.OperatorsFunctions = {'Iz': lambda Spin: Spin.Iz , 'Ix': lambda Spin: Spin.Ix, 'Iy': lambda Spin: Spin.Iy}
-        
         self.Int, self.Freq = self.GetFreqInt() 
 
-    
-    def GetFreqInt(self):
-        a = time.time() 
-        Htot = self.MakeH()
-        print('Ham:',str(time.time() - a))
 
-        a = time.time() 
+    def GetFreqInt(self):
+        Htot = self.MakeH()
+
+        DetectOp, RhoZero = self.MakeDetectRho()
+
         #Check for blocks in Htot
         Length = Htot.shape[0]
         CheckMatrix = Htot != 0 
@@ -109,99 +107,91 @@ class spinSystemCls:
                         new = False
             if new:
                 List.append(elements)
-        print('Block:',str(time.time() - a))
-        a = time.time() 
         for iii in range(len(List)): #Convert sets to np.array
             List[iii] = np.array(list(List[iii]))
-        print('set to array:',str(time.time() - a))
-        a = time.time() 
 
         Blocks = []
-        BlocksDiag = []
+        BlocksDiag = np.array([])
         BlocksT = []
         BlocksInvT = []
         for Blk in List:
             Blocks.append(Htot[Blk,:])
             Blocks[-1] = Blocks[-1][:,Blk]
             tmp1, tmp2 = np.linalg.eigh(Blocks[-1])
-            BlocksDiag.append(tmp1)
+            BlocksDiag = np.append(BlocksDiag,tmp1)
             BlocksT.append(tmp2)
             BlocksInvT.append(np.linalg.inv(tmp2))
 
 
-        print('Block treatment:',str(time.time() - a))
-        a = time.time() 
 
-        #===================
-
-        Hdiag,T = np.linalg.eigh(Htot)
-        print('Diag:',str(time.time() - a))
-        a = time.time() 
-        #del Htot
-        Tinv = np.linalg.inv(T)
-        print('Inv:',str(time.time() - a))
-        a = time.time() 
+        TTuple = tuple(BlocksT)
+        NewT = scipy.linalg.block_diag(*TTuple)
+        TinvTuple = tuple(BlocksInvT)
+        NewTinv = scipy.linalg.block_diag(*TinvTuple)
         
+        index = np.array([],dtype=int)
+        for blk in List:
+            index = np.append(index,blk)
 
-        DetectOp, RhoZero = self.MakeDetectRho()
-        print(DetectOp)
-        print('Make op:',str(time.time() - a))
-        a = time.time() 
+        BRhoZero = RhoZero[:,index]
+        BRhoZero = BRhoZero[index,:]
+        BDetectOp = DetectOp[:,index]
+        BDetectOp = BDetectOp[index,:]
 
-        #Blocks detect
-        DetectBlocks = []
-        parts = np.array([],dtype=int)
-        for iii in range(len(List)):
-            parts = np.append(parts,List[iii])
-        print(parts)
-        tmp = Htot[:,parts]
-        tmp = tmp[parts,:]
-        print(Htot)
-        print(tmp)
-        #for iii in range(len(List)):
-        #    Blk = List[iii]
-        #    Det = DetectOp[:,Blk]
-        #    Det = Det[Blk,:]
-        #    Rho = RhoZero[:,Blk]
-        #    Rho = Rho[Blk,:]
+        BRhoProp = np.linalg.multi_dot([NewTinv , BRhoZero , NewT]) #multi_dot is equally fast in this case, but readable
+        BDetectProp = np.linalg.multi_dot([NewTinv , BDetectOp , NewT])
 
-        #    RPropBlk = np.linalg.multi_dot([BlocksInvT[iii] , Rho , BlocksT[iii]])
-        #    DPropBlk = np.linalg.multi_dot([BlocksInvT[iii] , Det , BlocksT[iii]])
-
-        #    RPropBlk = np.tril(RPropBlk,1)
-        #    DetectBlocks.append(np.real(RPropBlk * DPropBlk))
-        #    print(Det)
-
-        print('Detect blocks:',str(time.time() - a))
-        a = time.time() 
-        #=======================
-
-        RhoProp = np.linalg.multi_dot([Tinv , RhoZero , T]) #multi_dot is equally fast in this case, but readable
-        del RhoZero
-        DetectProp = np.linalg.multi_dot([Tinv , DetectOp , T])
-        del T, Tinv, DetectOp
-
-        print('Transform op:',str(time.time() - a))
-        a = time.time() 
-
-        RhoProp =  np.tril(RhoProp,1)
-        DetectProp = np.real(DetectProp * RhoProp)
-        del RhoProp
-        print('Edit Transform op:',str(time.time() - a))
-        a = time.time() 
+        BDetectProp = np.real(BDetectProp * BRhoProp)
         #Get intensies and frequencies
 
-        Intensities = []
-        Frequencies = []
+        BIntensities = []
+        BFrequencies = []
 
-        for iii in range(DetectProp.shape[0]):
-            for jjj in range(iii):
-                #if abs(DetectProp[iii,jjj]) > 1e-9:
-                    Intensities.append(DetectProp[iii,jjj])
-                    Frequencies.append(Hdiag[iii] - Hdiag[jjj] - self.RefFreq)
+        for iii in range(BDetectProp.shape[0]):
+            for jjj in range(BDetectProp.shape[0]):
+                if abs(BDetectProp[iii,jjj]) > 1e-9:
+                    BIntensities.append(BDetectProp[iii,jjj])
+                    BFrequencies.append(BlocksDiag[iii] - BlocksDiag[jjj] - self.RefFreq)
 
-        print('Get int:',str(time.time() - a))
-        return Intensities, Frequencies
+
+        return BIntensities, BFrequencies
+
+
+
+    #def GetFreqIntOld(self):
+    #    a = time.time() 
+    #    Htot = self.MakeH()
+
+    #    DetectOp, RhoZero = self.MakeDetectRho()
+
+    #    a = time.time() 
+    #    Hdiag,T = np.linalg.eigh(Htot)
+    #    del Htot
+    #    Tinv = np.linalg.inv(T)
+    #    
+    #    print('Old Diag,T,Tinv',time.time() - a)
+
+    #    RhoProp = np.linalg.multi_dot([Tinv , RhoZero , T]) #multi_dot is equally fast in this case, but readable
+    #    del RhoZero
+    #    DetectProp = np.linalg.multi_dot([Tinv , DetectOp , T])
+    #    del T, Tinv, DetectOp
+
+
+    #    RhoProp =  np.tril(RhoProp,1)
+    #    DetectProp = np.real(DetectProp * RhoProp)
+    #    del RhoProp
+    #    #Get intensies and frequencies
+
+    #    Intensities = []
+    #    Frequencies = []
+
+    #    for iii in range(DetectProp.shape[0]):
+    #        for jjj in range(DetectProp.shape[0]):
+    #            if abs(DetectProp[iii,jjj]) > 1e-9:
+    #                Intensities.append(DetectProp[iii,jjj])
+    #                Frequencies.append(Hdiag[iii] - Hdiag[jjj] - self.RefFreq)
+
+    #    return Intensities, Frequencies
 
     def MakeHshift2(self):
         #Using intelligent method that avoids Kron, only slightly faster then 1D kron
@@ -1031,6 +1021,7 @@ class MainProgram(QtWidgets.QMainWindow):
                 self.SpinSys = spinSystemCls(fullSpinList, FullJmatrix, self.B0,self.RefFreq, self.StrongCoupling)
                 #self.Intensities, self.Frequencies  = GetFreqInt(SpinSystem,self.RefFreq)
             self.Spectrum, self.Axis, self.RefFreq = MakeSpectrum(self.SpinSys.Int, self.SpinSys.Freq, self.Limits, self.RefFreq, self.Lb, self.NumPoints)
+
         elif self.SimType == 1: #If homonuclear strong
             self.Spectrum, self.Axis, self.RefFreq = MakeHomoSpectrum(self.SpinList,self.Jmatrix,self.RefFreq,self.B0,self.Limits,self.Lb,self.NumPoints)
             return
