@@ -377,7 +377,7 @@ def MakeSpectrum(Intensities, Frequencies, AxisLimits, RefFreq,LineBroadening,Nu
     Limits = tuple(AxisLimits * RefFreq * 1e-6)
     sw = Limits[1] - Limits[0]
     dw = 1.0/ sw
-    lb = LineBroadening
+    lb = LineBroadening * np.pi
     #Make spectrum
     Spectrum, Axis = np.histogram(Frequencies, int(NumPoints), Limits , weights = Intensities)
     
