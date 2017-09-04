@@ -425,7 +425,7 @@ class PlotFrame(Plot1DFrame):
         self.xminlim= None
         self.ymaxlim= None
         self.yminlim= None
-
+     
     def setData(self, xdata, ydata):
         self.xdata = xdata
         self.ydata = ydata
@@ -451,6 +451,7 @@ class PlotFrame(Plot1DFrame):
             self.plotReset()
         self.ax.set_xlim(self.xmaxlim, self.xminlim)
         self.ax.set_ylim(self.yminlim, self.ymaxlim)
+        self.ax.set_xlabel('Shift [ppm]')
         self.canvas.draw()        
 
 
@@ -1004,7 +1005,7 @@ class MainProgram(QtWidgets.QMainWindow):
         self.mainFrame.addWidget(self.settingsFrame, 1, 0)
         self.spinsysFrame = SpinsysFrame(self)
         self.mainFrame.addWidget(self.spinsysFrame, 0, 1,2,1)
-        #self.sim()
+        self.sim()
 
     def setB0(self,B0):
         self.settingsFrame.B0Setting.setText(str(B0))
