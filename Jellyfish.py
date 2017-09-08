@@ -542,14 +542,19 @@ class SpinsysFrame(QtWidgets.QWidget):
         self.grid = QtWidgets.QGridLayout(self)
         self.grid.addWidget(QtWidgets.QLabel("Spin System:"), 0, 0,1,5,QtCore.Qt.AlignHCenter)
 
+        self.StrongToggle = QtWidgets.QCheckBox('Strong coupling')
+        self.StrongToggle.setChecked(True)
+        self.StrongToggle.stateChanged.connect(self.changeStrong)
+
+        self.grid.addWidget(self.StrongToggle,1,0,1,5)
         self.addButton = QtWidgets.QPushButton("Add isotope")
         self.addButton.clicked.connect(self.addIsotopeManager)
 
-        self.grid.addWidget(self.addButton,1,0,1,5)
+        self.grid.addWidget(self.addButton,2,0,1,5)
         
         self.setJButton = QtWidgets.QPushButton("Set J-couplings")
         self.setJButton.clicked.connect(self.setJManager)
-        self.grid.addWidget(self.setJButton,2,0,1,5)
+        self.grid.addWidget(self.setJButton,3,0,1,5)
 
         self.grid.addWidget(QtWidgets.QLabel("#:"), 5, 0,QtCore.Qt.AlignHCenter)
         self.grid.addWidget(QtWidgets.QLabel("Type:"), 5, 1,QtCore.Qt.AlignHCenter)
@@ -568,6 +573,13 @@ class SpinsysFrame(QtWidgets.QWidget):
         self.grid.setColumnStretch(200, 1)
         self.grid.setRowStretch(200, 1)
         
+    def changeStrong(self,state):
+        if state:
+            self.father.StrongCoupling = True
+        else:
+            self.father.StrongCoupling = False
+        self.parseSpinSys(False)
+
     def addSpin(self,Isotope,Shift,Multiplicity):
         self.Nspins += 1
         self.spinSysWidgets['Number'].append(QtWidgets.QLabel(str(self.Nspins)))
