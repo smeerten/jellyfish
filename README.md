@@ -16,11 +16,10 @@ And the following python packages are required[1]:
 - [matplotlib](http://matplotlib.org/) >= 1.4.2
 - [scipy](http://sourceforge.net/projects/scipy/files/scipy/) >= 0.14.1
 - [PyQt4](http://www.riverbankcomputing.com/software/pyqt/download) >= 4.11.4
-- [h5py](http://www.h5py.org/) >= 2.5.0 (for loading Matlab data)
 
 On Ubuntu and Debian these packages can be installed using the package manager:
 ```
-sudo apt-get install python python-numpy python-matplotlib python-scipy python-qt4 python-h5py
+sudo apt-get install python python-numpy python-matplotlib python-scipy python-qt4
 ```
 
 On Windows these packages can easily be installed by downloading [Anaconda](http://continuum.io/downloads).
