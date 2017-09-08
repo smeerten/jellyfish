@@ -1,5 +1,3 @@
-![Alt text](src/logo.gif?raw=true)
-
 Jellyfish
 ======
 
