@@ -1011,6 +1011,14 @@ class MainProgram(QtWidgets.QMainWindow):
         self.mainFrame = QtWidgets.QGridLayout(self.main_widget)
         self.main_widget.setFocus()
         self.setCentralWidget(self.main_widget)
+        self.menubar = self.menuBar()
+        self.filemenu = QtWidgets.QMenu('&File', self)
+        self.menubar.addMenu(self.filemenu)
+        self.savefigAct = self.filemenu.addAction('Export Figure', self.saveFigure, QtGui.QKeySequence.Print)
+        self.savefigAct.setToolTip('Export as Figure')
+        self.quitAct = self.filemenu.addAction('&Quit', self.fileQuit, QtGui.QKeySequence.Quit)
+        self.quitAct.setToolTip('Close ssNake')
+
         self.fig = Figure()
         self.canvas = FigureCanvas(self.fig)
         self.ax = self.fig.gca()
@@ -1045,7 +1053,20 @@ class MainProgram(QtWidgets.QMainWindow):
     def SetRefFreq(self):
         index = ABBREVLIST.index(self.RefNucleus)
         self.RefFreq = freqRatioList[index] * GAMMASCALE * 1e6 * self.B0
-        
+
+    def saveFigure(self):
+        #self.fig.set_size_inches(self.widthEntry.value() / 2.54, self.heightEntry.value() / 2.54)
+        #WorkspaceName = self.father.workspaceNames[self.father.workspaceNum]  # Set name of file to be saved to workspace name to start
+        f = QtWidgets.QFileDialog.getSaveFileName(self, 'Save File', 'Spectrum.png' ,filter = '(*.png)')
+        if type(f) is tuple:
+            f = f[0]        
+        if f:
+            dpi = 150
+            self.fig.savefig(f, format='png', dpi=dpi)
+
+    def fileQuit(self):
+        self.close()
+
     def sim(self,ResetXAxis = False, ResetYAxis = False, recalc = True):
         if self.SimType == 0: #If exact
             if recalc:
