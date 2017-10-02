@@ -1120,6 +1120,8 @@ class MainProgram(QtWidgets.QMainWindow):
         self.menubar.addMenu(self.filemenu)
         self.savefigAct = self.filemenu.addAction('Export Figure', self.saveFigure, QtGui.QKeySequence.Print)
         self.savefigAct.setToolTip('Export as Figure')
+        self.savedatAct = self.filemenu.addAction('Export Data', self.saveData)
+        self.savedatAct.setToolTip('Export as text')
         self.quitAct = self.filemenu.addAction('&Quit', self.fileQuit, QtGui.QKeySequence.Quit)
         self.quitAct.setToolTip('Close ssNake')
 
@@ -1159,14 +1161,23 @@ class MainProgram(QtWidgets.QMainWindow):
         self.RefFreq = freqRatioList[index] * GAMMASCALE * 1e6 * self.B0
 
     def saveFigure(self):
-        #self.fig.set_size_inches(self.widthEntry.value() / 2.54, self.heightEntry.value() / 2.54)
-        #WorkspaceName = self.father.workspaceNames[self.father.workspaceNum]  # Set name of file to be saved to workspace name to start
         f = QtWidgets.QFileDialog.getSaveFileName(self, 'Save File', 'Spectrum.png' ,filter = '(*.png)')
         if type(f) is tuple:
             f = f[0]        
         if f:
             dpi = 150
             self.fig.savefig(f, format='png', dpi=dpi)
+
+    def saveData(self):
+        f = QtWidgets.QFileDialog.getSaveFileName(self, 'Save File', 'Spectrum.txt' ,filter = '(*.txt)')
+        if type(f) is tuple:
+            f = f[0]        
+        if f:
+            data = np.zeros((len(self.Axis),2))
+            data[:,0] = self.Axis
+            data[:,1] = self.Spectrum
+            np.savetxt(f,data)
+
 
     def fileQuit(self):
         self.close()
