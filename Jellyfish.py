@@ -1123,7 +1123,7 @@ class MainProgram(QtWidgets.QMainWindow):
         self.savedatAct = self.filemenu.addAction('Export Data', self.saveData)
         self.savedatAct.setToolTip('Export as text')
         self.quitAct = self.filemenu.addAction('&Quit', self.fileQuit, QtGui.QKeySequence.Quit)
-        self.quitAct.setToolTip('Close ssNake')
+        self.quitAct.setToolTip('Close Jellyfish')
 
         self.fig = Figure()
         self.canvas = FigureCanvas(self.fig)
