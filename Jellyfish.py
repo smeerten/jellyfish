@@ -41,6 +41,7 @@ from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 from spectrumFrame import Plot1DFrame
 from safeEval import safeEval
+import scipy.sparse
 import time
 NSTEPS = 1000
 
@@ -108,144 +109,149 @@ class spinSystemCls:
     def GetFreqInt(self):
 
         a = time.time()
-        Htot = self.MakeH()
+        Htot, List = self.MakeH()
 
         print('HamTime',time.time() -a)
         a = time.time()
-        DetectOp, RhoZero = self.MakeDetectRho()
-        print('Make detect zero',time.time() -a)
-        a = time.time()
        
-        #Check for blocks in Htot
-        Length = Htot.shape[0]
-        CheckMatrix = Htot != 0 
-        List = []
-        for row in range(Length):
-            elements = np.where(CheckMatrix[row,:] == True)
-            elements = np.append(elements,row) #append diagonal (shift energy might be zero)
-            elements = set(elements)
-            new = True
-            for Set in range(len(List)):
-                if new:
-                    if len(elements & List[Set]) > 0:
-                        List[Set] = List[Set] | elements
-                        new = False
-            if new:
-                List.append(elements)
-        for iii in range(len(List)): #Convert sets to np.array
-            List[iii] = np.array(list(List[iii]))
-
-        print('Check blockdiag',time.time() -a)
+        BlocksDiag, BlocksDiag2, BlocksT, BlocksInvT = self.diagonalizeBlocks(Htot)
+        del Htot
+        print('Inv and eig',time.time() -a)
         a = time.time()
-        Blocks = []
+        #DetectOp, RhoZero = self.MakeDetectRho()
+        #print('Make detect zero',time.time() -a)
+       
+        #a = time.time()
+
+        #TTuple = tuple(BlocksT)
+        #NewT = scipy.linalg.block_diag(*TTuple)
+        #TinvTuple = tuple(BlocksInvT)
+        #NewTinv = scipy.linalg.block_diag(*TinvTuple)
+        #
+        #index = np.array([],dtype=int)
+        #for blk in List:
+        #    index = np.append(index,blk)
+
+        #BRhoZero = RhoZero[:,index]
+        #BRhoZero = np.real(BRhoZero[index,:])
+        #BDetectOp = DetectOp[:,index]
+        #BDetectOp = np.real(BDetectOp[index,:])
+        #print('Prepare Blockdiagonal frame',time.time() -a)
+
+        #a = time.time()
+        #BRhoProp = np.linalg.multi_dot([NewTinv , BRhoZero , NewT]) #multi_dot is equally fast in this case, but readable
+        #BDetectProp = np.linalg.multi_dot([NewTinv , BDetectOp , NewT])
+
+        #BDetectProp = np.real(BDetectProp * BRhoProp)
+        ##Get intensies and frequencies
+
+        #BIntensities = []
+        #BFrequencies = []
+
+        #for iii in range(BDetectProp.shape[0]):
+        #    for jjj in range(BDetectProp.shape[0]):
+        #        if abs(BDetectProp[iii,jjj]) > 1e-9:
+        #            BIntensities.append(BDetectProp[iii,jjj])
+        #            BFrequencies.append(BlocksDiag[iii] - BlocksDiag[jjj] - self.RefFreq)
+
+        #print('RegularTime',time.time() -a)
+        a = time.time()
+
+
+        #NEW METHOD
+        Detect2, RhoZero2 = self.MakeDetectRho2()
+        print('Make detect zero2',time.time() -a)
+        a = time.time()
+
+        B2Intensities = []
+        B2Frequencies = []
+        for index in range(len(List)):
+            for index2 in range(len(List)):
+
+                tmpZero = RhoZero2.tocsc()[:,List[index2]]
+                tmpZero = tmpZero.tocsr()[List[index],:].todense()
+                tmpDetect = Detect2.tocsc()[:,List[index2]]
+                tmpDetect = tmpDetect.tocsr()[List[index],:].todense()
+        
+                if np.sum(np.sum(np.abs(tmpZero))) > 1e-9 and  np.sum(np.sum(np.abs(tmpDetect))) > 1e-9: #If signal
+                    BRhoProp2 = np.linalg.multi_dot([BlocksInvT[index] , tmpZero , BlocksT[index2]])
+                    BDetectProp2 = np.linalg.multi_dot([BlocksInvT[index] , tmpDetect , BlocksT[index2]])
+                    BDetectProp2 = np.multiply(BDetectProp2 , BRhoProp2)
+
+                    for iii in range(BDetectProp2.shape[0]):
+                            for jjj in range(BDetectProp2.shape[1]):
+                                if abs(BDetectProp2[iii,jjj]) > 1e-9:
+                                    B2Intensities.append(BDetectProp2[iii,jjj])
+                                    if index2 >= index:
+                                        B2Frequencies.append(BlocksDiag2[index][iii]  - BlocksDiag2[index2][jjj] - self.RefFreq)
+                                    else:
+                                        B2Frequencies.append(BlocksDiag2[index][jjj]  - BlocksDiag2[index2][iii] - self.RefFreq)
+
+
+        print('New',time.time() -a)
+        #a = time.time()
+        #LstStart = [0]
+        #for item in List:
+        #    LstStart.append(len(item))
+
+        #LstStart = np.cumsum(LstStart)
+
+        #B2Intensities = []
+        #B2Frequencies = []
+        #for index in range(len(List)):
+        #    RowLen = len(List[index])
+        #    tmpZero = BRhoZero[LstStart[index]:LstStart[index + 1],:]
+        #    tmpDetect = BDetectOp[LstStart[index]:LstStart[index + 1],:]
+        #    for index2 in range(len(List)):
+        #        tmpZero2 = tmpZero[:,LstStart[index2]:LstStart[index2 + 1]]
+        #        tmpDetect2 = tmpDetect[:,LstStart[index2]:LstStart[index2 + 1]]
+        #        #tmpZero = self.makeTmpRho(ZLine,DetPos,[List[index],List[index2]],[index,index2])
+
+        #        if np.sum(np.sum(np.abs(tmpZero2))) > 1e-9 and  np.sum(np.sum(np.abs(tmpDetect2))) > 1e-9:
+        #            ColLen = len(List[index2])
+        #            Energies = np.append(BlocksDiag2[index],BlocksDiag2[index2])
+        #            if RowLen != 1 and ColLen != 1:
+        #                tmpZero2 =  np.linalg.multi_dot([BlocksInvT[index] , tmpZero2 , BlocksT[index2]])
+        #                tmpDetect2 =  np.linalg.multi_dot([BlocksInvT[index] , tmpDetect2 , BlocksT[index2]])
+        #            elif RowLen != 1 and ColLen > 1:
+        #                tmpZero2 =  np.linalg.multi_dot([tmpZero2 , BlocksT[index2]])
+        #                tmpDetect2 =  np.linalg.multi_dot([tmpDetect2 , BlocksT[index2]])
+        #            else:
+        #                B2Intensities.append(tmpZero2[0,0] * tmpDetect2[0,0])
+        #                if index2 >= index:
+        #                    B2Frequencies.append(Energies[0]  - Energies[1] - self.RefFreq)
+        #                else:
+        #                    B2Frequencies.append(Energies[1]  - Energies[0] - self.RefFreq)
+        #                continue
+
+        #            tmpZero2 = tmpZero2 * tmpDetect2
+        #            for iii in range(tmpZero2.shape[0]):
+        #                for jjj in range(tmpZero2.shape[1]):
+        #                    if abs(tmpZero2[iii,jjj]) > 1e-9:
+        #                        B2Intensities.append(tmpZero2[iii,jjj])
+        #                        if index2 >= index:
+        #                            B2Frequencies.append(Energies[iii]  - Energies[jjj + RowLen] - self.RefFreq)
+        #                        else:
+        #                            B2Frequencies.append(Energies[iii + RowLen]  - Energies[jjj] - self.RefFreq)
+
+
+        #print('SpecialTime',time.time() -a)
+
+        return B2Intensities, B2Frequencies
+
+    def diagonalizeBlocks(self,Hams):
         BlocksDiag = np.array([])
         BlocksDiag2 = []
         BlocksT = []
         BlocksInvT = []
-        for Blk in List:
-            Blocks.append(Htot[Blk,:])
-            Blocks[-1] = Blocks[-1][:,Blk]
-            tmp1, tmp2 = np.linalg.eigh(Blocks[-1])
+        for Blk in Hams:
+            tmp1, tmp2 = np.linalg.eigh(Blk)
             BlocksDiag = np.append(BlocksDiag,tmp1)
             BlocksDiag2.append(tmp1)
             BlocksT.append(tmp2)
             BlocksInvT.append(np.linalg.inv(tmp2))
 
-
-        print('Inv and eig',time.time() -a)
-        a = time.time()
-
-        TTuple = tuple(BlocksT)
-        NewT = scipy.linalg.block_diag(*TTuple)
-        TinvTuple = tuple(BlocksInvT)
-        NewTinv = scipy.linalg.block_diag(*TinvTuple)
-        
-        index = np.array([],dtype=int)
-        for blk in List:
-            index = np.append(index,blk)
-
-        BRhoZero = RhoZero[:,index]
-        BRhoZero = np.real(BRhoZero[index,:])
-        BDetectOp = DetectOp[:,index]
-        BDetectOp = np.real(BDetectOp[index,:])
-        print('Prepare Blockdiagonal frame',time.time() -a)
-
-        a = time.time()
-        BRhoProp = np.linalg.multi_dot([NewTinv , BRhoZero , NewT]) #multi_dot is equally fast in this case, but readable
-        BDetectProp = np.linalg.multi_dot([NewTinv , BDetectOp , NewT])
-
-        BDetectProp = np.real(BDetectProp * BRhoProp)
-        #Get intensies and frequencies
-
-        BIntensities = []
-        BFrequencies = []
-
-        for iii in range(BDetectProp.shape[0]):
-            for jjj in range(BDetectProp.shape[0]):
-                if abs(BDetectProp[iii,jjj]) > 1e-9:
-                    BIntensities.append(BDetectProp[iii,jjj])
-                    BFrequencies.append(BlocksDiag[iii] - BlocksDiag[jjj] - self.RefFreq)
-
-        print('RegularTime',time.time() -a)
-        a = time.time()
-
-
-        #NEW METHOD
-        DLine, ZLine, DetPos = self.MakeDetectRho2()
-        print('Make detect zero2',time.time() -a)
-        a = time.time()
-
-        a = time.time()
-        LstStart = [0]
-        for item in List:
-            LstStart.append(len(item))
-
-        LstStart = np.cumsum(LstStart)
-
-        B2Intensities = []
-        B2Frequencies = []
-        for index in range(len(List)):
-            RowLen = len(List[index])
-            tmpZero = BRhoZero[LstStart[index]:LstStart[index + 1],:]
-            tmpDetect = BDetectOp[LstStart[index]:LstStart[index + 1],:]
-            for index2 in range(len(List)):
-                tmpZero2 = tmpZero[:,LstStart[index2]:LstStart[index2 + 1]]
-                tmpDetect2 = tmpDetect[:,LstStart[index2]:LstStart[index2 + 1]]
-                #tmpZero = self.makeTmpRho(ZLine,DetPos,[List[index],List[index2]],[index,index2])
-
-                if np.sum(np.sum(np.abs(tmpZero2))) > 1e-9 and  np.sum(np.sum(np.abs(tmpDetect2))) > 1e-9:
-                    ColLen = len(List[index2])
-                    Energies = np.append(BlocksDiag2[index],BlocksDiag2[index2])
-                    if RowLen != 1 and ColLen != 1:
-                        tmpZero2 =  np.linalg.multi_dot([BlocksInvT[index] , tmpZero2 , BlocksT[index2]])
-                        tmpDetect2 =  np.linalg.multi_dot([BlocksInvT[index] , tmpDetect2 , BlocksT[index2]])
-                    elif RowLen != 1 and ColLen > 1:
-                        tmpZero2 =  np.linalg.multi_dot([tmpZero2 , BlocksT[index2]])
-                        tmpDetect2 =  np.linalg.multi_dot([tmpDetect2 , BlocksT[index2]])
-                    else:
-                        B2Intensities.append(tmpZero2[0,0] * tmpDetect2[0,0])
-                        if index2 >= index:
-                            B2Frequencies.append(Energies[0]  - Energies[1] - self.RefFreq)
-                        else:
-                            B2Frequencies.append(Energies[1]  - Energies[0] - self.RefFreq)
-                        continue
-
-                    tmpZero2 = tmpZero2 * tmpDetect2
-                    for iii in range(tmpZero2.shape[0]):
-                        for jjj in range(tmpZero2.shape[1]):
-                            if abs(tmpZero2[iii,jjj]) > 1e-9:
-                                B2Intensities.append(tmpZero2[iii,jjj])
-                                if index2 >= index:
-                                    B2Frequencies.append(Energies[iii]  - Energies[jjj + RowLen] - self.RefFreq)
-                                else:
-                                    B2Frequencies.append(Energies[iii + RowLen]  - Energies[jjj] - self.RefFreq)
-
-
-        print('SpecialTime',time.time() -a)
-        #print(BIntensities)
-        #print(B2Intensities)
-
-        return BIntensities, BFrequencies
+        return BlocksDiag, BlocksDiag2, BlocksT, BlocksInvT
 
 
     def makeTmpRho(self,Lines,Pos,DiagPos,Index):
@@ -313,6 +319,7 @@ class spinSystemCls:
             HShift += (self.SpinList[spin].shift * 1e-6 + 1) * self.SpinList[spin].Gamma * self.B0 *  temp
         return np.diag(HShift)
 
+
     def MakeH(self):
         Jmatrix = self.Jmatrix
 
@@ -321,30 +328,103 @@ class spinSystemCls:
         else:
             OperatorsFunctions = {'Iz': lambda Spin: Spin.Iz}
       
-        Ham = np.zeros((self.MatrixSize,self.MatrixSize))
-        i,j = np.indices(Ham.shape)
 
         #Make shift
         HShift = np.zeros(self.MatrixSize)
         for spin in range(len(self.SpinList)):
             HShift +=  (self.SpinList[spin].shift * 1e-6 + 1) * self.SpinList[spin].Gamma * self.B0 *  self.MakeSingleIz(spin,self.OperatorsFunctions['Iz'])
-        Ham[i==j] = HShift
 
-
+        Lines = []
+        Orders = []
+        HJz = np.zeros(self.MatrixSize)
         for spin in range(len(self.SpinList)):
             for subspin in range(spin,len(self.SpinList)):
                     if Jmatrix[spin,subspin] != 0:
-                        Ham[i == j] += self.MakeMultipleIz(OperatorsFunctions['Iz'],[spin,subspin]) * Jmatrix[spin,subspin]
+                        HJz += self.MakeMultipleIz(OperatorsFunctions['Iz'],[spin,subspin]) * Jmatrix[spin,subspin]
 
                         if self.HighOrder:
                             if self.SpinList[spin].I == 0.5 and self.SpinList[subspin].I == 0.5:
                                 Line, order = self.MakeDoubleIxy(OperatorsFunctions['Ix'],spin,subspin)
-                                Ham[i == j + order] = Line * Jmatrix[spin,subspin] #Only low diag is needed for Ham (eigh assumes this)
-                                Ham[i == j - order] = Line * Jmatrix[spin,subspin] #Only low diag is needed for Ham (eigh assumes this)
+                                Lines.append(Line * Jmatrix[spin,subspin])
+                                Orders.append(order)
                             else:
-                                Ham = Ham + (self.MakeMultipleOperator(OperatorsFunctions['Ix'],[spin,subspin]) + self.MakeMultipleOperator(OperatorsFunctions['Iy'],[spin,subspin])) * Jmatrix[spin,subspin]
+                                tmp = (self.MakeMultipleOperator(OperatorsFunctions['Ix'],[spin,subspin]) + self.MakeMultipleOperator(OperatorsFunctions['Iy'],[spin,subspin])) * Jmatrix[spin,subspin]
 
-        return Ham
+
+        #Get block diagonal from Lines/orders
+        Length = self.MatrixSize
+        print(Length)
+        List = []
+        for row in range(Length):
+            elements = []
+            if row != Length - 1:
+                for Line in range(len(Lines)):
+                    if len(Lines[Line]) > row: #If there is an element
+                        if Lines[Line][row] != 0:
+                            elements.append(Orders[Line] + row)
+
+            elements.append(row) #append diagonal (shift energy might be zero)
+            elements = set(elements)
+            new = True
+            for Set in range(len(List)):
+                if new:
+                    if len(elements & List[Set]) > 0:
+                        List[Set] = List[Set] | elements
+                        new = False
+            if new:
+                List.append(elements)
+        for iii in range(len(List)): #Convert sets to np.array
+            List[iii] = np.sort(np.array(list(List[iii])))
+
+        #Duplicate -orders
+        for index in range(len(Lines)):
+            Lines.append(Lines[index])
+            Orders.append(-Orders[index])
+        Lines.append(HJz + HShift)
+        Orders.append(0)
+        Htot =  scipy.sparse.diags(Lines, Orders)
+    
+        #Make block diag Hamiltonians
+        Hams = []
+        for Blk in List:
+            tmp = Htot.tocsc()[:,Blk]
+            tmp = tmp.tocsr()[Blk,:]
+            Hams.append(tmp.todense())
+
+        return Hams, List
+    ##BACKUP before smart blockdiag find
+    #def MakeH(self):
+    #    Jmatrix = self.Jmatrix
+
+    #    if self.HighOrder:
+    #        OperatorsFunctions = {'Iz': lambda Spin: Spin.Iz , 'Ix': lambda Spin: Spin.Ix, 'Iy': lambda Spin: Spin.Iy}
+    #    else:
+    #        OperatorsFunctions = {'Iz': lambda Spin: Spin.Iz}
+    #  
+    #    Ham = np.zeros((self.MatrixSize,self.MatrixSize))
+    #    i,j = np.indices(Ham.shape)
+
+    #    #Make shift
+    #    HShift = np.zeros(self.MatrixSize)
+    #    for spin in range(len(self.SpinList)):
+    #        HShift +=  (self.SpinList[spin].shift * 1e-6 + 1) * self.SpinList[spin].Gamma * self.B0 *  self.MakeSingleIz(spin,self.OperatorsFunctions['Iz'])
+    #    Ham[i==j] = HShift
+
+
+    #    for spin in range(len(self.SpinList)):
+    #        for subspin in range(spin,len(self.SpinList)):
+    #                if Jmatrix[spin,subspin] != 0:
+    #                    Ham[i == j] += self.MakeMultipleIz(OperatorsFunctions['Iz'],[spin,subspin]) * Jmatrix[spin,subspin]
+
+    #                    if self.HighOrder:
+    #                        if self.SpinList[spin].I == 0.5 and self.SpinList[subspin].I == 0.5:
+    #                            Line, order = self.MakeDoubleIxy(OperatorsFunctions['Ix'],spin,subspin)
+    #                            Ham[i == j + order] = Line * Jmatrix[spin,subspin] #Only low diag is needed for Ham (eigh assumes this)
+    #                            Ham[i == j - order] = Line * Jmatrix[spin,subspin] #Only low diag is needed for Ham (eigh assumes this)
+    #                        else:
+    #                            Ham = Ham + (self.MakeMultipleOperator(OperatorsFunctions['Ix'],[spin,subspin]) + self.MakeMultipleOperator(OperatorsFunctions['Iy'],[spin,subspin])) * Jmatrix[spin,subspin]
+
+    #    return Ham
 
     def MakeDoubleIxy(self,Ix,spin,subspin):
         list = [i for i in range(len(self.SpinList))]
@@ -401,22 +481,29 @@ class spinSystemCls:
         return Detect, RhoZero / self.MatrixSize # Scale with Partition Function of boltzmann equation
 
     def MakeDetectRho2(self):
-        Detect = np.zeros((self.MatrixSize,self.MatrixSize),dtype=complex)
-        RhoZero = np.zeros((self.MatrixSize,self.MatrixSize),dtype=float)
-        i,j = np.indices(Detect.shape)
-        DLine = []
-        ZLine = []
-        Pos = []
+        Lines = []
+        Orders = []
         for spin in range(len(self.SpinList)):
             #Make single spin operator when needed. Only Ix needs to be saved temporarily, as it is used twice 
 
             if self.SpinList[spin].Detect:
-                LineTmp, PosTmp =  self.MakeSingleIxy(spin,self.OperatorsFunctions['Ix'],'Ix')
-                DLine.append(2 * LineTmp)
-                ZLine.append(LineTmp / self.MatrixSize) # Scale with Partition Function of boltzmann equation
-                Pos.append(PosTmp)
+                Line, Pos =  self.MakeSingleIxy(spin,self.OperatorsFunctions['Ix'],'Ix')
+                Lines.append(Line)
+                Orders.append(Pos)
+                #Detect[i == j - Pos] =  2 * Line
+                #RhoZero[i == j + Pos] =  Line #Seems not to be necessary (tril is taken later(after dot commands))
+                #RhoZero[i == j - Pos] =  Line
 
-        return DLine, ZLine, Pos
+        if len(Lines) == 0:
+            Detect = np.array([[]])
+            RhoZero = np.array([[]])
+        else:
+            Detect =  scipy.sparse.diags(Lines, Orders) * 2
+            RhoZero = scipy.sparse.diags(Lines, Orders) / self.MatrixSize
+
+
+        return Detect, RhoZero # Scale with Partition Function of boltzmann equation
+
 
     def MakeSingleIz(self,spin,Operator):
         #Optimized for Iz: 1D kron only
@@ -489,9 +576,13 @@ class spinSystemCls:
         return M
         
     def GetMatrixSize(self):
-        self.MatrixSize = 1
-        for spin in self.SpinList:
-            self.MatrixSize = int(self.MatrixSize * (spin.I * 2 + 1))
+        if len(self.SpinList) > 0:
+            self.MatrixSize = 1
+            for spin in self.SpinList:
+                self.MatrixSize = int(self.MatrixSize * (spin.I * 2 + 1))
+        else:
+            self.MatrixSize = 0
+        
            
      
 
@@ -1150,7 +1241,7 @@ class MainProgram(QtWidgets.QMainWindow):
         self.mainFrame.addWidget(self.settingsFrame, 1, 0)
         self.spinsysFrame = SpinsysFrame(self)
         self.mainFrame.addWidget(self.spinsysFrame, 0, 1,2,1)
-        self.sim()
+        #self.sim()
 
     def setB0(self,B0):
         self.settingsFrame.B0Setting.setText(str(B0))
