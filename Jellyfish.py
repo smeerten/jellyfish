@@ -189,54 +189,7 @@ class spinSystemCls:
 
 
         print('New',time.time() -a)
-        #a = time.time()
-        #LstStart = [0]
-        #for item in List:
-        #    LstStart.append(len(item))
-
-        #LstStart = np.cumsum(LstStart)
-
-        #B2Intensities = []
-        #B2Frequencies = []
-        #for index in range(len(List)):
-        #    RowLen = len(List[index])
-        #    tmpZero = BRhoZero[LstStart[index]:LstStart[index + 1],:]
-        #    tmpDetect = BDetectOp[LstStart[index]:LstStart[index + 1],:]
-        #    for index2 in range(len(List)):
-        #        tmpZero2 = tmpZero[:,LstStart[index2]:LstStart[index2 + 1]]
-        #        tmpDetect2 = tmpDetect[:,LstStart[index2]:LstStart[index2 + 1]]
-        #        #tmpZero = self.makeTmpRho(ZLine,DetPos,[List[index],List[index2]],[index,index2])
-
-        #        if np.sum(np.sum(np.abs(tmpZero2))) > 1e-9 and  np.sum(np.sum(np.abs(tmpDetect2))) > 1e-9:
-        #            ColLen = len(List[index2])
-        #            Energies = np.append(BlocksDiag2[index],BlocksDiag2[index2])
-        #            if RowLen != 1 and ColLen != 1:
-        #                tmpZero2 =  np.linalg.multi_dot([BlocksInvT[index] , tmpZero2 , BlocksT[index2]])
-        #                tmpDetect2 =  np.linalg.multi_dot([BlocksInvT[index] , tmpDetect2 , BlocksT[index2]])
-        #            elif RowLen != 1 and ColLen > 1:
-        #                tmpZero2 =  np.linalg.multi_dot([tmpZero2 , BlocksT[index2]])
-        #                tmpDetect2 =  np.linalg.multi_dot([tmpDetect2 , BlocksT[index2]])
-        #            else:
-        #                B2Intensities.append(tmpZero2[0,0] * tmpDetect2[0,0])
-        #                if index2 >= index:
-        #                    B2Frequencies.append(Energies[0]  - Energies[1] - self.RefFreq)
-        #                else:
-        #                    B2Frequencies.append(Energies[1]  - Energies[0] - self.RefFreq)
-        #                continue
-
-        #            tmpZero2 = tmpZero2 * tmpDetect2
-        #            for iii in range(tmpZero2.shape[0]):
-        #                for jjj in range(tmpZero2.shape[1]):
-        #                    if abs(tmpZero2[iii,jjj]) > 1e-9:
-        #                        B2Intensities.append(tmpZero2[iii,jjj])
-        #                        if index2 >= index:
-        #                            B2Frequencies.append(Energies[iii]  - Energies[jjj + RowLen] - self.RefFreq)
-        #                        else:
-        #                            B2Frequencies.append(Energies[iii + RowLen]  - Energies[jjj] - self.RefFreq)
-
-
-        #print('SpecialTime',time.time() -a)
-
+       
         return B2Intensities, B2Frequencies
 
     def diagonalizeBlocks(self,Hams):
@@ -245,11 +198,17 @@ class spinSystemCls:
         BlocksT = []
         BlocksInvT = []
         for Blk in Hams:
-            tmp1, tmp2 = np.linalg.eigh(Blk)
-            BlocksDiag = np.append(BlocksDiag,tmp1)
-            BlocksDiag2.append(tmp1)
-            BlocksT.append(tmp2)
-            BlocksInvT.append(np.linalg.inv(tmp2))
+            if Blk.shape[0] == 1: #If shape 1, no need for diag
+                BlocksDiag = np.append(BlocksDiag,Blk[0])
+                BlocksDiag2.append(Blk[0])
+                BlocksT.append(np.array(([[1]])))
+                BlocksInvT.append(np.array(([[1]])))
+            else:
+                tmp1, tmp2 = np.linalg.eigh(Blk)
+                BlocksDiag = np.append(BlocksDiag,tmp1)
+                BlocksDiag2.append(tmp1)
+                BlocksT.append(tmp2)
+                BlocksInvT.append(np.linalg.inv(tmp2))
 
         return BlocksDiag, BlocksDiag2, BlocksT, BlocksInvT
 
@@ -265,8 +224,6 @@ class spinSystemCls:
         return Rho
             
             
-
-
 
 
     #def GetFreqIntOld(self):
@@ -351,10 +308,11 @@ class spinSystemCls:
                                 tmp = (self.MakeMultipleOperator(OperatorsFunctions['Ix'],[spin,subspin]) + self.MakeMultipleOperator(OperatorsFunctions['Iy'],[spin,subspin])) * Jmatrix[spin,subspin]
 
 
+        print('Get lines' , time.time() - a) 
         #Get block diagonal from Lines/orders
         Length = self.MatrixSize
-        print(Length)
         List = []
+        OnesList = [] #List for all the single elements found (no need for further check)
         for row in range(Length):
             elements = []
             if row != Length - 1:
@@ -372,10 +330,16 @@ class spinSystemCls:
                         List[Set] = List[Set] | elements
                         new = False
             if new:
-                List.append(elements)
+                if len(elements) == -1: #If len 1, put in seperate list, no further checks
+                    OnesList.append(np.array(list(elements)))
+                else:
+                    List.append(elements)
         for iii in range(len(List)): #Convert sets to np.array
             List[iii] = np.sort(np.array(list(List[iii])))
 
+        List = List + OnesList #Append the oneslist
+        print([len(x) for x in List])
+        print('Get List' , time.time() - a) 
         #Duplicate -orders
         for index in range(len(Lines)):
             Lines.append(Lines[index])
@@ -389,7 +353,7 @@ class spinSystemCls:
         for Blk in List:
             if len(Blk) == 1: #Only take diagonal (which is the shift)
                 #Indexing from sparse Htot takes relatively long
-                Hams.append(np.array([HShift[Blk]]))
+                Hams.append(np.array([HShift[Blk] + HJz[Blk]]))
             else:
                 tmp = Htot.tocsc()[:,Blk]
                 tmp = tmp.tocsr()[Blk,:]
@@ -397,39 +361,6 @@ class spinSystemCls:
 
         print('Make block' , time.time() - a) 
         return Hams, List
-    ##BACKUP before smart blockdiag find
-    #def MakeH(self):
-    #    Jmatrix = self.Jmatrix
-
-    #    if self.HighOrder:
-    #        OperatorsFunctions = {'Iz': lambda Spin: Spin.Iz , 'Ix': lambda Spin: Spin.Ix, 'Iy': lambda Spin: Spin.Iy}
-    #    else:
-    #        OperatorsFunctions = {'Iz': lambda Spin: Spin.Iz}
-    #  
-    #    Ham = np.zeros((self.MatrixSize,self.MatrixSize))
-    #    i,j = np.indices(Ham.shape)
-
-    #    #Make shift
-    #    HShift = np.zeros(self.MatrixSize)
-    #    for spin in range(len(self.SpinList)):
-    #        HShift +=  (self.SpinList[spin].shift * 1e-6 + 1) * self.SpinList[spin].Gamma * self.B0 *  self.MakeSingleIz(spin,self.OperatorsFunctions['Iz'])
-    #    Ham[i==j] = HShift
-
-
-    #    for spin in range(len(self.SpinList)):
-    #        for subspin in range(spin,len(self.SpinList)):
-    #                if Jmatrix[spin,subspin] != 0:
-    #                    Ham[i == j] += self.MakeMultipleIz(OperatorsFunctions['Iz'],[spin,subspin]) * Jmatrix[spin,subspin]
-
-    #                    if self.HighOrder:
-    #                        if self.SpinList[spin].I == 0.5 and self.SpinList[subspin].I == 0.5:
-    #                            Line, order = self.MakeDoubleIxy(OperatorsFunctions['Ix'],spin,subspin)
-    #                            Ham[i == j + order] = Line * Jmatrix[spin,subspin] #Only low diag is needed for Ham (eigh assumes this)
-    #                            Ham[i == j - order] = Line * Jmatrix[spin,subspin] #Only low diag is needed for Ham (eigh assumes this)
-    #                        else:
-    #                            Ham = Ham + (self.MakeMultipleOperator(OperatorsFunctions['Ix'],[spin,subspin]) + self.MakeMultipleOperator(OperatorsFunctions['Iy'],[spin,subspin])) * Jmatrix[spin,subspin]
-
-    #    return Ham
 
     def MakeDoubleIxy(self,Ix,spin,subspin):
         list = [i for i in range(len(self.SpinList))]
@@ -618,14 +549,14 @@ def MakeHomoSpectrum(SpinList,Jmatrix,RefFreq,B0,AxisLimits,LineBroadening,NumPo
     for spin in range(len(SpinList)):
         inlist = False
         for iso in IsoSets.keys():
-            print(iso)
-            print(SpinList[spin][0])
+            #print(iso)
+            #print(SpinList[spin][0])
             if iso == SpinList[spin][0]:
                 IsoSets[iso].append(spin) #Append the index
                 inlist = True
         if not inlist: #If not, append name and
             IsoSets[SpinList[spin][0]] = [spin]
-    print(IsoSets)
+    #print(IsoSets)
     #For each isotope, calc spectra for all options with j coupling partners
     return None, None, None
 
