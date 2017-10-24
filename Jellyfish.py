@@ -322,7 +322,7 @@ class spinSystemCls:
 
     def MakeH(self):
         Jmatrix = self.Jmatrix
-
+        a = time.time()
         if self.HighOrder:
             OperatorsFunctions = {'Iz': lambda Spin: Spin.Iz , 'Ix': lambda Spin: Spin.Ix, 'Iy': lambda Spin: Spin.Iy}
         else:
@@ -383,14 +383,19 @@ class spinSystemCls:
         Lines.append(HJz + HShift)
         Orders.append(0)
         Htot =  scipy.sparse.diags(Lines, Orders)
-    
+        print('Make Htot' , time.time() - a) 
         #Make block diag Hamiltonians
         Hams = []
         for Blk in List:
-            tmp = Htot.tocsc()[:,Blk]
-            tmp = tmp.tocsr()[Blk,:]
-            Hams.append(tmp.todense())
+            if len(Blk) == 1: #Only take diagonal (which is the shift)
+                #Indexing from sparse Htot takes relatively long
+                Hams.append(np.array([HShift[Blk]]))
+            else:
+                tmp = Htot.tocsc()[:,Blk]
+                tmp = tmp.tocsr()[Blk,:]
+                Hams.append(tmp.todense())
 
+        print('Make block' , time.time() - a) 
         return Hams, List
     ##BACKUP before smart blockdiag find
     #def MakeH(self):
