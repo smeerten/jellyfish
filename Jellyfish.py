@@ -120,7 +120,9 @@ class spinSystemCls:
         a = time.time()
 
         Detect, RhoZero = self.MakeDetectRho()
-        print('Make detect zero2',time.time() -a)
+        if Detect is None: #If no detect, return empty lists
+            return [],[]
+        print('Make detect zero',time.time() -a)
         a = time.time()
 
         Inten = []
@@ -324,19 +326,21 @@ class spinSystemCls:
     def MakeDetectRho(self):
         Lines = []
         Orders = []
+        DetSelect = []
         for spin in range(len(self.SpinList)):
             #Make single spin operator when needed. Only Ix needs to be saved temporarily, as it is used twice 
 
-            if self.SpinList[spin].Detect:
-                Line, Pos =  self.MakeSingleIxy(spin,self.OperatorsFunctions['Ix'],'Ix')
-                Lines.append(Line)
-                Orders.append(Pos)
+            Line, Pos =  self.MakeSingleIxy(spin,self.OperatorsFunctions['Ix'],'Ix')
+            Lines.append(Line)
+            Orders.append(Pos)
+            if self.SpinList[spin].Detect: #Add to detection
+                DetSelect.append(spin)
 
-        if len(Lines) == 0:
-            Detect = np.array([[]])
-            RhoZero = np.array([[]])
+        if len(Lines) == 0 or len(DetSelect) == 0:
+            Detect = None
+            RhoZero = None
         else:
-            Detect =  scipy.sparse.diags(Lines, Orders) * 2 #Iplus = 2 * Ix (above triangular)
+            Detect =  scipy.sparse.diags([Lines[x] for x in DetSelect], [Orders[x] for x in DetSelect]) * 2 #Iplus = 2 * Ix (above triangular)
             RhoZero = scipy.sparse.diags(Lines, Orders) / self.MatrixSize # Scale with Partition Function of boltzmann equation
             #Should RhoZero have lower diag also? Detect has no intensity there, so should not matter...
 
@@ -344,14 +348,14 @@ class spinSystemCls:
 
     def MakeSingleIz(self,spin,Operator):
         #Optimized for Iz: 1D kron only
-            IList = []
-            for subspin in range(len(self.SpinList)):
-                if spin == subspin:
-                    IList.append(np.diag(Operator(self.SpinList[subspin])))
-                else:
-                    IList.append(np.diag(self.SpinList[subspin].Ident))
-            
-            return self.kronList(IList)
+        IList = []
+        for subspin in range(len(self.SpinList)):
+            if spin == subspin:
+                IList.append(np.diag(Operator(self.SpinList[subspin])))
+            else:
+                IList.append(np.diag(self.SpinList[subspin].Ident))
+        
+        return self.kronList(IList)
 
 
     def MakeSingleIxy(self,spin,Operator,Type):
@@ -401,12 +405,9 @@ class spinSystemCls:
         return M
         
     def GetMatrixSize(self):
-        if len(self.SpinList) > 0:
-            self.MatrixSize = 1
-            for spin in self.SpinList:
-                self.MatrixSize = int(self.MatrixSize * (spin.I * 2 + 1))
-        else:
-            self.MatrixSize = 0
+        self.MatrixSize = 1
+        for spin in self.SpinList:
+            self.MatrixSize = int(self.MatrixSize * (spin.I * 2 + 1))
         
 def MakeSpectrum(Intensities, Frequencies, AxisLimits, RefFreq,LineBroadening,NumPoints):
     a = time.time()
@@ -428,24 +429,6 @@ def MakeSpectrum(Intensities, Frequencies, AxisLimits, RefFreq,LineBroadening,Nu
        Spectrum = np.real(np.fft.fftshift(np.fft.fft(Fid)))
     Axis = (Axis[1:] + 0.5 * (Axis[0] - Axis[1]))  / (RefFreq * 1e-6)
     return Spectrum * NumPoints, Axis, RefFreq
-
-def MakeHomoSpectrum(SpinList,Jmatrix,RefFreq,B0,AxisLimits,LineBroadening,NumPoints):
-    #Make isotope sets
-    IsoSets = {}
-    for spin in range(len(SpinList)):
-        inlist = False
-        for iso in IsoSets.keys():
-            #print(iso)
-            #print(SpinList[spin][0])
-            if iso == SpinList[spin][0]:
-                IsoSets[iso].append(spin) #Append the index
-                inlist = True
-        if not inlist: #If not, append name and
-            IsoSets[SpinList[spin][0]] = [spin]
-    #print(IsoSets)
-    #For each isotope, calc spectra for all options with j coupling partners
-    return None, None, None
-
 
 class PlotFrame(Plot1DFrame):
 
@@ -580,29 +563,30 @@ class SpinsysFrame(QtWidgets.QWidget):
         self.StrongToggle.setChecked(True)
         self.StrongToggle.stateChanged.connect(self.changeStrong)
 
-        self.grid.addWidget(self.StrongToggle,1,0,1,5)
+        self.grid.addWidget(self.StrongToggle,1,0,1,6)
         self.addButton = QtWidgets.QPushButton("Add isotope")
         self.addButton.clicked.connect(self.addIsotopeManager)
 
-        self.grid.addWidget(self.addButton,2,0,1,5)
+        self.grid.addWidget(self.addButton,2,0,1,6)
         
         self.setJButton = QtWidgets.QPushButton("Set J-couplings")
         self.setJButton.clicked.connect(self.setJManager)
-        self.grid.addWidget(self.setJButton,3,0,1,5)
+        self.grid.addWidget(self.setJButton,3,0,1,6)
 
         self.grid.addWidget(QtWidgets.QLabel("#:"), 5, 0,QtCore.Qt.AlignHCenter)
         self.grid.addWidget(QtWidgets.QLabel("Type:"), 5, 1,QtCore.Qt.AlignHCenter)
         self.grid.addWidget(QtWidgets.QLabel("Shift [ppm]:"), 5, 2,QtCore.Qt.AlignHCenter)
         self.grid.addWidget(QtWidgets.QLabel("Multiplicity:"), 5, 3,QtCore.Qt.AlignHCenter)
-        self.grid.addWidget(QtWidgets.QLabel("Remove:"), 5, 4,QtCore.Qt.AlignHCenter)
-        self.spinSysWidgets = {'Number':[],'Isotope':[], 'Shift':[], 'Multi':[], 'Remove':[]}
+        self.grid.addWidget(QtWidgets.QLabel("Detect:"), 5, 4,QtCore.Qt.AlignHCenter)
+        self.grid.addWidget(QtWidgets.QLabel("Remove:"), 5, 5,QtCore.Qt.AlignHCenter)
+        self.spinSysWidgets = {'Number':[],'Isotope':[], 'Shift':[], 'Multi':[],'Detect':[], 'Remove':[]}
         self.sliderTypes = {'Type':[],'Spins':[]}
         self.sliderWidgets = {'Label':[],'Slider':[],'Remove':[]}
         self.Nspins = 0
         
         self.addSliderButton = QtWidgets.QPushButton("Add slider")
         self.addSliderButton.clicked.connect(self.addSliderManager)
-        self.grid.addWidget(self.addSliderButton,100,0,1,5)        
+        self.grid.addWidget(self.addSliderButton,100,0,1,6)        
         
         self.grid.setColumnStretch(200, 1)
         self.grid.setRowStretch(200, 1)
@@ -614,7 +598,7 @@ class SpinsysFrame(QtWidgets.QWidget):
             self.father.StrongCoupling = False
         self.parseSpinSys(False)
 
-    def addSpin(self,Isotope,Shift,Multiplicity,Sim = True):
+    def addSpin(self,Isotope,Shift,Multiplicity,Detect,Sim = True):
         self.Nspins += 1
         self.spinSysWidgets['Number'].append(QtWidgets.QLabel(str(self.Nspins)))
         self.spinSysWidgets['Isotope'].append(QtWidgets.QLabel(Isotope))
@@ -634,9 +618,15 @@ class SpinsysFrame(QtWidgets.QWidget):
         self.spinSysWidgets['Multi'][-1].valueChanged.connect(lambda: self.parseSpinSys())
         self.grid.addWidget(self.spinSysWidgets['Multi'][-1],5 + self.Nspins,3)
         
+        self.spinSysWidgets['Detect'].append(QtWidgets.QCheckBox())
+        self.spinSysWidgets['Detect'][-1].setChecked(Detect)
+        self.spinSysWidgets['Detect'][-1].stateChanged.connect(lambda: self.parseSpinSys())
+        self.grid.addWidget(self.spinSysWidgets['Detect'][-1],5 + self.Nspins,4)
+
+
         self.spinSysWidgets['Remove'].append(QtWidgets.QPushButton("X"))
         self.spinSysWidgets['Remove'][-1].clicked.connect((lambda n: lambda: self.removeSpin(n))(self.Nspins))
-        self.grid.addWidget(self.spinSysWidgets['Remove'][-1],5 + self.Nspins,4)
+        self.grid.addWidget(self.spinSysWidgets['Remove'][-1],5 + self.Nspins,5)
         
         temp = np.zeros((self.Nspins,self.Nspins))
         temp[:-1,:-1] = self.Jmatrix
@@ -659,7 +649,7 @@ class SpinsysFrame(QtWidgets.QWidget):
             if dialog.closed:
                 return
             else:
-                self.addSpin(dialog.Isotope,dialog.Shift,dialog.Multi)
+                self.addSpin(dialog.Isotope,dialog.Shift,dialog.Multi,True)
                 
     def addSliderManager(self):
         dialog = addSliderWindow(self,self.Nspins)
@@ -762,10 +752,10 @@ class SpinsysFrame(QtWidgets.QWidget):
         Jtemp = np.delete(Jtemp, index - 1, 1)
         self.Jmatrix = np.array([])
         
-        self.spinSysWidgets = {'Number':[],'Isotope':[], 'Shift':[], 'Multi':[], 'Remove':[]}
+        self.spinSysWidgets = {'Number':[],'Isotope':[], 'Shift':[], 'Multi':[], 'Detect':[], 'Remove':[]}
         for spin in range(len(backup['Shift'])):
             if spin != index - 1:
-                self.addSpin(backup['Isotope'][spin].text(),float(backup['Shift'][spin].text()),backup['Multi'][spin].value(), Sim = False)
+                self.addSpin(backup['Isotope'][spin].text(),float(backup['Shift'][spin].text()),backup['Multi'][spin].value(), backup['Detect'][spin].checkState(),Sim = False)
         self.Jmatrix = Jtemp    
         del backup    
         self.parseSpinSys()
@@ -779,7 +769,8 @@ class SpinsysFrame(QtWidgets.QWidget):
         NSpins = len(self.spinSysWidgets['Isotope'])
         SpinList = []
         for Spin in range(NSpins):
-            SpinList.append([self.spinSysWidgets['Isotope'][Spin].text(),safeEval(self.spinSysWidgets['Shift'][Spin].text()),self.spinSysWidgets['Multi'][Spin].value(),True])
+            SpinList.append([self.spinSysWidgets['Isotope'][Spin].text(),safeEval(self.spinSysWidgets['Shift'][Spin].text()),self.spinSysWidgets['Multi'][Spin].value(),
+                self.spinSysWidgets['Detect'][Spin].checkState()])
         
         self.father.Jmatrix = self.Jmatrix
         self.father.SpinList = SpinList
@@ -999,7 +990,7 @@ def expandSpinsys(SpinList,Jmatrix):
     fullSpinListIndex = []
     for Spin in range(NSpins):
         #spinTemp = spinCls(self.spinSysWidgets['Isotope'][Spin].text(),safeEval(self.spinSysWidgets['Shift'][Spin].text()),True)
-        spinTemp = spinCls(SpinList[Spin][0],SpinList[Spin][1],True)
+        spinTemp = spinCls(SpinList[Spin][0],SpinList[Spin][1],SpinList[Spin][3])
         multi = SpinList[Spin][2]
         for iii in range(multi):
             fullSpinList.append(spinTemp)
@@ -1051,7 +1042,6 @@ class MainProgram(QtWidgets.QMainWindow):
         self.RefNucleus = '1H'
         self.RefFreq = 0
         self.SetRefFreq()
-        self.SimType = 0
         self.Jmatrix = None
         self.StrongCoupling = True
         self.SpinList = []
@@ -1095,16 +1085,16 @@ class MainProgram(QtWidgets.QMainWindow):
         self.close()
 
     def sim(self,ResetXAxis = False, ResetYAxis = False, recalc = True):
-        if self.SimType == 0: #If exact
+        if len(self.SpinList) > 0:
             if recalc:
                 fullSpinList, FullJmatrix = expandSpinsys(self.SpinList,self.Jmatrix)
                 self.SpinSys = spinSystemCls(fullSpinList, FullJmatrix, self.B0,self.RefFreq, self.StrongCoupling)
                 #self.Intensities, self.Frequencies  = GetFreqInt(SpinSystem,self.RefFreq)
             self.Spectrum, self.Axis, self.RefFreq = MakeSpectrum(self.SpinSys.Int, self.SpinSys.Freq, self.Limits, self.RefFreq, self.Lb, self.NumPoints)
+        else:
+            self.Axis = self.Limits
+            self.Spectrum = np.array([0,0])
 
-        elif self.SimType == 1: #If homonuclear strong
-            self.Spectrum, self.Axis, self.RefFreq = MakeHomoSpectrum(self.SpinList,self.Jmatrix,self.RefFreq,self.B0,self.Limits,self.Lb,self.NumPoints)
-            return
 
         self.PlotFrame.setData(self.Axis, self.Spectrum)
         if ResetXAxis:
