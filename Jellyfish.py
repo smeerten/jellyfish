@@ -114,103 +114,74 @@ class spinSystemCls:
         print('HamTime',time.time() -a)
         a = time.time()
        
-        BlocksDiag, BlocksDiag2, BlocksT, BlocksInvT = self.diagonalizeBlocks(Htot)
+        BlocksDiag, BlocksT, BlocksInvT = self.diagonalizeBlocks(Htot)
         del Htot
         print('Inv and eig',time.time() -a)
         a = time.time()
-        #DetectOp, RhoZero = self.MakeDetectRho()
-        #print('Make detect zero',time.time() -a)
-       
-        #a = time.time()
-
-        #TTuple = tuple(BlocksT)
-        #NewT = scipy.linalg.block_diag(*TTuple)
-        #TinvTuple = tuple(BlocksInvT)
-        #NewTinv = scipy.linalg.block_diag(*TinvTuple)
-        #
-        #index = np.array([],dtype=int)
-        #for blk in List:
-        #    index = np.append(index,blk)
-
-        #BRhoZero = RhoZero[:,index]
-        #BRhoZero = np.real(BRhoZero[index,:])
-        #BDetectOp = DetectOp[:,index]
-        #BDetectOp = np.real(BDetectOp[index,:])
-        #print('Prepare Blockdiagonal frame',time.time() -a)
-
-        #a = time.time()
-        #BRhoProp = np.linalg.multi_dot([NewTinv , BRhoZero , NewT]) #multi_dot is equally fast in this case, but readable
-        #BDetectProp = np.linalg.multi_dot([NewTinv , BDetectOp , NewT])
-
-        #BDetectProp = np.real(BDetectProp * BRhoProp)
-        ##Get intensies and frequencies
-
-        #BIntensities = []
-        #BFrequencies = []
-
-        #for iii in range(BDetectProp.shape[0]):
-        #    for jjj in range(BDetectProp.shape[0]):
-        #        if abs(BDetectProp[iii,jjj]) > 1e-9:
-        #            BIntensities.append(BDetectProp[iii,jjj])
-        #            BFrequencies.append(BlocksDiag[iii] - BlocksDiag[jjj] - self.RefFreq)
-
-        #print('RegularTime',time.time() -a)
-        a = time.time()
-
 
         #NEW METHOD
         Detect2, RhoZero2 = self.MakeDetectRho2()
         print('Make detect zero2',time.time() -a)
         a = time.time()
 
-        B2Intensities = []
-        B2Frequencies = []
+        Inten = []
+        Freq = []
+
+        b = 0
+        c = 0
         for index in range(len(List)):
             for index2 in range(len(List)):
 
+                b = b - time.time()
                 tmpZero = RhoZero2.tocsc()[:,List[index2]]
-                tmpZero = tmpZero.tocsr()[List[index],:].todense()
+                tmpZero = tmpZero.tocsr()[List[index],:]
                 tmpDetect = Detect2.tocsc()[:,List[index2]]
-                tmpDetect = tmpDetect.tocsr()[List[index],:].todense()
-        
-                if np.sum(np.sum(np.abs(tmpZero))) > 1e-9 and  np.sum(np.sum(np.abs(tmpDetect))) > 1e-9: #If signal
-                    BRhoProp2 = np.linalg.multi_dot([BlocksInvT[index] , tmpZero , BlocksT[index2]])
-                    BDetectProp2 = np.linalg.multi_dot([BlocksInvT[index] , tmpDetect , BlocksT[index2]])
+                tmpDetect = tmpDetect.tocsr()[List[index],:]
+                b = b + time.time()
+                if tmpZero.sum() > 1e-9 and  tmpDetect.sum() > 1e-9: #If signal
+                    c = c - time.time()
+                    #Take first dot while sparse: saves time
+                    BRhoProp2 = np.dot(BlocksInvT[index], tmpZero.dot(BlocksT[index2]))
+                    BDetectProp2 = np.dot(BlocksInvT[index], tmpDetect.dot(BlocksT[index2]))
                     BDetectProp2 = np.multiply(BDetectProp2 , BRhoProp2)
-
-                    for iii in range(BDetectProp2.shape[0]):
-                            for jjj in range(BDetectProp2.shape[1]):
-                                if abs(BDetectProp2[iii,jjj]) > 1e-9:
-                                    B2Intensities.append(BDetectProp2[iii,jjj])
-                                    if index2 >= index:
-                                        B2Frequencies.append(BlocksDiag2[index][iii]  - BlocksDiag2[index2][jjj] - self.RefFreq)
-                                    else:
-                                        B2Frequencies.append(BlocksDiag2[index][jjj]  - BlocksDiag2[index2][iii] - self.RefFreq)
-
-
-        print('New',time.time() -a)
+                    c = c + time.time()
+                    Pos = np.where(BDetectProp2 > 1e-9)
+                    tmp = np.array(BDetectProp2[Pos])
+                    Inten = Inten  + list(tmp.flatten())
+                    tmp2 = BlocksDiag[index][Pos[0]] - BlocksDiag[index2][Pos[1]]
+                    Freq= Freq + list(np.abs(tmp2) - np.abs(self.RefFreq))
+                  
+        print('Sparse to dense slice' , b)
+        print('Dot',c)
+        print('Get int',time.time() -a)
        
-        return B2Intensities, B2Frequencies
+        return Inten, Freq
 
     def diagonalizeBlocks(self,Hams):
-        BlocksDiag = np.array([])
-        BlocksDiag2 = []
+        BlocksDiag = []
         BlocksT = []
         BlocksInvT = []
+
+        b = 0
+        c = 0
         for Blk in Hams:
             if Blk.shape[0] == 1: #If shape 1, no need for diag
-                BlocksDiag = np.append(BlocksDiag,Blk[0])
-                BlocksDiag2.append(Blk[0])
+                BlocksDiag.append(Blk[0])
                 BlocksT.append(np.array(([[1]])))
                 BlocksInvT.append(np.array(([[1]])))
             else:
+                b = b - time.time()
                 tmp1, tmp2 = np.linalg.eigh(Blk)
-                BlocksDiag = np.append(BlocksDiag,tmp1)
-                BlocksDiag2.append(tmp1)
+                b = b + time.time()
+                BlocksDiag.append(tmp1)
                 BlocksT.append(tmp2)
+                c = c - time.time()
                 BlocksInvT.append(np.linalg.inv(tmp2))
-
-        return BlocksDiag, BlocksDiag2, BlocksT, BlocksInvT
+                c = c + time.time()
+                print('inv = transpose',np.allclose(BlocksInvT[-1] ,np.transpose(tmp2)))
+        print('eig',b)
+        print('inv',c)
+        return BlocksDiag, BlocksT, BlocksInvT
 
 
     def makeTmpRho(self,Lines,Pos,DiagPos,Index):
