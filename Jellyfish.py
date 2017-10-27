@@ -552,8 +552,6 @@ class SettingsFrame(QtWidgets.QWidget):
         else:
             self.LbSetting.setText(str(safeEval(self.LbSetting.text()) / (self.father.RefFreq * 1e-6)))
         
-        
-        
     def ApplySettings(self,ResetAxis = False, recalc = True):
         self.father.B0 = safeEval(self.B0Setting.text())
         self.father.RefNucleus = ABBREVLIST[self.RefNucleusSettings.currentIndex()]
@@ -616,7 +614,7 @@ class SpinsysFrame(QtWidgets.QWidget):
             self.father.StrongCoupling = False
         self.parseSpinSys(False)
 
-    def addSpin(self,Isotope,Shift,Multiplicity):
+    def addSpin(self,Isotope,Shift,Multiplicity,Sim = True):
         self.Nspins += 1
         self.spinSysWidgets['Number'].append(QtWidgets.QLabel(str(self.Nspins)))
         self.spinSysWidgets['Isotope'].append(QtWidgets.QLabel(Isotope))
@@ -643,7 +641,8 @@ class SpinsysFrame(QtWidgets.QWidget):
         temp = np.zeros((self.Nspins,self.Nspins))
         temp[:-1,:-1] = self.Jmatrix
         self.Jmatrix = temp
-        self.parseSpinSys(True)
+        if Sim:
+            self.parseSpinSys(True)
         
     def setJManager(self):
         dialog = setJWindow(self,self.Jmatrix)
@@ -766,7 +765,7 @@ class SpinsysFrame(QtWidgets.QWidget):
         self.spinSysWidgets = {'Number':[],'Isotope':[], 'Shift':[], 'Multi':[], 'Remove':[]}
         for spin in range(len(backup['Shift'])):
             if spin != index - 1:
-                self.addSpin(backup['Isotope'][spin].text(),float(backup['Shift'][spin].text()),backup['Multi'][spin].value())
+                self.addSpin(backup['Isotope'][spin].text(),float(backup['Shift'][spin].text()),backup['Multi'][spin].value(), Sim = False)
         self.Jmatrix = Jtemp    
         del backup    
         self.parseSpinSys()
