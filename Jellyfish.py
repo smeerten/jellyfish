@@ -114,13 +114,12 @@ class spinSystemCls:
         print('HamTime',time.time() -a)
         a = time.time()
        
-        BlocksDiag, BlocksT, BlocksInvT = self.diagonalizeBlocks(Htot)
+        BlocksDiag, BlocksT, = self.diagonalizeBlocks(Htot)
         del Htot #Already empty, but remove anyway
-        print('Inv and eig',time.time() -a)
+        print('Eig',time.time() -a)
         a = time.time()
 
-        #NEW METHOD
-        Detect2, RhoZero2 = self.MakeDetectRho2()
+        Detect, RhoZero = self.MakeDetectRho()
         print('Make detect zero2',time.time() -a)
         a = time.time()
 
@@ -129,20 +128,22 @@ class spinSystemCls:
 
         b = 0
         c = 0
+        d = 0
         for index in range(len(List)):
             for index2 in range(len(List)):
 
                 b = b - time.time()
-                tmpZero = RhoZero2.tocsc()[:,List[index2]]
+                tmpZero = RhoZero.tocsc()[:,List[index2]]
                 tmpZero = tmpZero.tocsr()[List[index],:]
-                tmpDetect = Detect2.tocsc()[:,List[index2]]
+                tmpDetect = Detect.tocsc()[:,List[index2]]
                 tmpDetect = tmpDetect.tocsr()[List[index],:]
                 b = b + time.time()
                 if tmpZero.sum() > 1e-9 and  tmpDetect.sum() > 1e-9: #If signal
                     c = c - time.time()
                     #Take first dot while sparse: saves time
-                    BRhoProp2 = np.dot(BlocksInvT[index], tmpZero.dot(BlocksT[index2]))
-                    BDetectProp2 = np.dot(BlocksInvT[index], tmpDetect.dot(BlocksT[index2]))
+                    #Take transpose every time. Takes hardly any time, and prevents double memory for T and inv(T)
+                    BRhoProp2 = np.dot(np.transpose(BlocksT[index]), tmpZero.dot(BlocksT[index2]))
+                    BDetectProp2 = np.dot(np.transpose(BlocksT[index]), tmpDetect.dot(BlocksT[index2]))
                     BDetectProp2 = np.multiply(BDetectProp2 , BRhoProp2)
                     c = c + time.time()
                     Pos = np.where(BDetectProp2 > 1e-9)
@@ -160,33 +161,20 @@ class spinSystemCls:
     def diagonalizeBlocks(self,Hams):
         BlocksDiag = []
         BlocksT = []
-        BlocksInvT = []
 
-        b = 0
-        c = 0
         while len(Hams) > 0:
             if Hams[0].shape[0] == 1: #If shape 1, no need for diag
                 BlocksDiag.append(Hams[0][0])
                 BlocksT.append(np.array(([[1]])))
-                BlocksInvT.append(np.array(([[1]])))
             else:
-                b = b - time.time()
                 #Convert to dense for diagonalize
                 tmp1, tmp2 = np.linalg.eigh(Hams[0].todense())
-                b = b + time.time()
                 BlocksDiag.append(tmp1)
                 BlocksT.append(tmp2)
-                c = c - time.time()
-                #BlocksInvT.append(np.linalg.inv(tmp2))
-                BlocksInvT.append(np.transpose(tmp2))
-                c = c + time.time()
             del Hams[0] #Remove from list. This makes sure that, at any time
             #Only 1 of the Hamiltonians is densely defined, and when diagonalizations took
             #place, the original sparse matrix is removed
-        print('eig',b)
-        print('inv',c)
-        return BlocksDiag, BlocksT, BlocksInvT
-
+        return BlocksDiag, BlocksT
     def MakeHshift2(self):
         #Using intelligent method that avoids Kron, only slightly faster then 1D kron
         #Spin 1/2 only atm
@@ -334,21 +322,6 @@ class spinSystemCls:
         return 2 * Pre, orderM #double the result to simulate Ix + Iy
 
     def MakeDetectRho(self):
-        Detect = np.zeros((self.MatrixSize,self.MatrixSize),dtype=complex)
-        RhoZero = np.zeros((self.MatrixSize,self.MatrixSize),dtype=float)
-        i,j = np.indices(Detect.shape)
-        for spin in range(len(self.SpinList)):
-            #Make single spin operator when needed. Only Ix needs to be saved temporarily, as it is used twice 
-
-            if self.SpinList[spin].Detect:
-                Line, Pos =  self.MakeSingleIxy(spin,self.OperatorsFunctions['Ix'],'Ix')
-                Detect[i == j - Pos] =  2 * Line
-                #RhoZero[i == j + Pos] =  Line #Seems not to be necessary (tril is taken later(after dot commands))
-                RhoZero[i == j - Pos] =  Line
-
-        return Detect, RhoZero / self.MatrixSize # Scale with Partition Function of boltzmann equation
-
-    def MakeDetectRho2(self):
         Lines = []
         Orders = []
         for spin in range(len(self.SpinList)):
@@ -358,20 +331,16 @@ class spinSystemCls:
                 Line, Pos =  self.MakeSingleIxy(spin,self.OperatorsFunctions['Ix'],'Ix')
                 Lines.append(Line)
                 Orders.append(Pos)
-                #Detect[i == j - Pos] =  2 * Line
-                #RhoZero[i == j + Pos] =  Line #Seems not to be necessary (tril is taken later(after dot commands))
-                #RhoZero[i == j - Pos] =  Line
 
         if len(Lines) == 0:
             Detect = np.array([[]])
             RhoZero = np.array([[]])
         else:
-            Detect =  scipy.sparse.diags(Lines, Orders) * 2
-            RhoZero = scipy.sparse.diags(Lines, Orders) / self.MatrixSize
+            Detect =  scipy.sparse.diags(Lines, Orders) * 2 #Iplus = 2 * Ix (above triangular)
+            RhoZero = scipy.sparse.diags(Lines, Orders) / self.MatrixSize # Scale with Partition Function of boltzmann equation
+            #Should RhoZero have lower diag also? Detect has no intensity there, so should not matter...
 
-
-        return Detect, RhoZero # Scale with Partition Function of boltzmann equation
-
+        return Detect, RhoZero 
 
     def MakeSingleIz(self,spin,Operator):
         #Optimized for Iz: 1D kron only
@@ -384,19 +353,6 @@ class spinSystemCls:
             
             return self.kronList(IList)
 
-
-    def MakeSingleOperator(self,spin,Operator):
-            list = [i for i in range(len(self.SpinList))]
-            beforelength = 1
-            for iii in list[0:spin]:
-                beforelength *= int(self.SpinList[iii].I * 2 + 1)
-            afterlength = 1
-
-            for jjj in list[spin + 1:]:
-                afterlength *= int(self.SpinList[jjj].I * 2 + 1)
-
-            IList = [np.eye(beforelength) ,Operator(self.SpinList[spin]) , np.eye(afterlength)]
-            return self.kronList(IList)
 
     def MakeSingleIxy(self,spin,Operator,Type):
         #Optimized routine to get Ix|Y for a single spin
@@ -428,6 +384,7 @@ class spinSystemCls:
        return Matrix
 
     def MakeMultipleIz(self,Operator,SelectList):
+        #1D kron. Reasonably efficient
        IList = []
        for spin in  range(len(self.SpinList)):
            if spin in SelectList:
@@ -451,9 +408,6 @@ class spinSystemCls:
         else:
             self.MatrixSize = 0
         
-           
-     
-
 def MakeSpectrum(Intensities, Frequencies, AxisLimits, RefFreq,LineBroadening,NumPoints):
     a = time.time()
     Limits = tuple(AxisLimits * RefFreq * 1e-6)
