@@ -115,7 +115,7 @@ class spinSystemCls:
         a = time.time()
        
         BlocksDiag, BlocksT, BlocksInvT = self.diagonalizeBlocks(Htot)
-        del Htot
+        del Htot #Already empty, but remove anyway
         print('Inv and eig',time.time() -a)
         a = time.time()
 
@@ -164,73 +164,28 @@ class spinSystemCls:
 
         b = 0
         c = 0
-        for Blk in Hams:
-            if Blk.shape[0] == 1: #If shape 1, no need for diag
-                BlocksDiag.append(Blk[0])
+        while len(Hams) > 0:
+            if Hams[0].shape[0] == 1: #If shape 1, no need for diag
+                BlocksDiag.append(Hams[0][0])
                 BlocksT.append(np.array(([[1]])))
                 BlocksInvT.append(np.array(([[1]])))
             else:
                 b = b - time.time()
-                tmp1, tmp2 = np.linalg.eigh(Blk)
+                #Convert to dense for diagonalize
+                tmp1, tmp2 = np.linalg.eigh(Hams[0].todense())
                 b = b + time.time()
                 BlocksDiag.append(tmp1)
                 BlocksT.append(tmp2)
                 c = c - time.time()
-                BlocksInvT.append(np.linalg.inv(tmp2))
+                #BlocksInvT.append(np.linalg.inv(tmp2))
+                BlocksInvT.append(np.transpose(tmp2))
                 c = c + time.time()
-                print('inv = transpose',np.allclose(BlocksInvT[-1] ,np.transpose(tmp2)))
+            del Hams[0] #Remove from list. This makes sure that, at any time
+            #Only 1 of the Hamiltonians is densely defined, and when diagonalizations took
+            #place, the original sparse matrix is removed
         print('eig',b)
         print('inv',c)
         return BlocksDiag, BlocksT, BlocksInvT
-
-
-    def makeTmpRho(self,Lines,Pos,DiagPos,Index):
-        #Lines: off diagonal lines
-        #Pos: the positions of those lines
-        #DiagPos: len 2 list with np.array's of the indexes
-        #Index: list with row and column index of the current block
-        Rho = np.zeros((len(DiagPos[0]),len(DiagPos[1])))
-        for index in range(len(Lines)):
-            pass
-        return Rho
-            
-            
-
-
-    #def GetFreqIntOld(self):
-    #    a = time.time() 
-    #    Htot = self.MakeH()
-
-    #    DetectOp, RhoZero = self.MakeDetectRho()
-
-    #    a = time.time() 
-    #    Hdiag,T = np.linalg.eigh(Htot)
-    #    del Htot
-    #    Tinv = np.linalg.inv(T)
-    #    
-    #    print('Old Diag,T,Tinv',time.time() - a)
-
-    #    RhoProp = np.linalg.multi_dot([Tinv , RhoZero , T]) #multi_dot is equally fast in this case, but readable
-    #    del RhoZero
-    #    DetectProp = np.linalg.multi_dot([Tinv , DetectOp , T])
-    #    del T, Tinv, DetectOp
-
-
-    #    RhoProp =  np.tril(RhoProp,1)
-    #    DetectProp = np.real(DetectProp * RhoProp)
-    #    del RhoProp
-    #    #Get intensies and frequencies
-
-    #    Intensities = []
-    #    Frequencies = []
-
-    #    for iii in range(DetectProp.shape[0]):
-    #        for jjj in range(DetectProp.shape[0]):
-    #            if abs(DetectProp[iii,jjj]) > 1e-9:
-    #                Intensities.append(DetectProp[iii,jjj])
-    #                Frequencies.append(Hdiag[iii] - Hdiag[jjj] - self.RefFreq)
-
-    #    return Intensities, Frequencies
 
     def MakeHshift2(self):
         #Using intelligent method that avoids Kron, only slightly faster then 1D kron
@@ -276,7 +231,13 @@ class spinSystemCls:
                                 Lines.append(Line * Jmatrix[spin,subspin])
                                 Orders.append(order)
                             else:
-                                tmp = (self.MakeMultipleOperator(OperatorsFunctions['Ix'],[spin,subspin]) + self.MakeMultipleOperator(OperatorsFunctions['Iy'],[spin,subspin])) * Jmatrix[spin,subspin]
+                                tmp = self.MakeMultipleOperator(OperatorsFunctions['Ix'],[spin,subspin]) + self.MakeMultipleOperator(OperatorsFunctions['Iy'],[spin,subspin])
+
+                                tmp2  = np.where(tmp > 1e-3)
+                                order = abs(tmp2[1][0] - tmp2[0][0])
+                                Orders.append(order)
+                                Lines.append(np.real(np.diag(tmp,order)) * Jmatrix[spin,subspin])
+                                del tmp, tmp2
 
 
         print('Get lines' , time.time() - a) 
@@ -328,7 +289,7 @@ class spinSystemCls:
             else:
                 tmp = Htot.tocsc()[:,Blk]
                 tmp = tmp.tocsr()[Blk,:]
-                Hams.append(tmp.todense())
+                Hams.append(tmp)
 
         print('Make block' , time.time() - a) 
         return Hams, List
