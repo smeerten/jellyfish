@@ -18,7 +18,6 @@
 # along with Jellyfish. If not, see <http://www.gnu.org/licenses/>.
 
 import numpy as np
-import scipy.signal
 import os
 import sip
 import sys
@@ -41,8 +40,8 @@ from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 from spectrumFrame import Plot1DFrame
 from safeEval import safeEval
-import scipy.sparse
 import time
+import engine as en
 NSTEPS = 1000
 
 GAMMASCALE = 42.577469 / 100
@@ -76,359 +75,6 @@ for i in range(N):
         freqRatioList[i] = isoN[8]
 
 
-class spinCls:
-    def __init__(self, Nucleus, shift, Detect):
-        self.index = ABBREVLIST.index(Nucleus)
-        self.I = spinList[self.index]
-        self.Gamma = freqRatioList[self.index] * GAMMASCALE * 1e6
-        self.shift = shift
-        self.Detect = Detect
-        self.m = np.linspace(self.I,-self.I,self.I*2+1)
-        self.Iarray = np.linspace(self.I,self.I,self.I*2+1)
-        self.Iz = np.diag(self.m)
-        self.Iplus = np.diag(np.sqrt(self.I*(self.I+1)-self.m*(self.m+1))[1:],1)
-        self.Imin = np.diag(np.diag(self.Iplus,1),-1)
-        self.Ix = 0.5 * (self.Iplus + self.Imin)
-        self.Iy = -0.5j * (self.Iplus - self.Imin)
-        
-        self.Ident = np.eye(int(self.I*2+1))
-
-
-class spinSystemCls:
-    def __init__(self, SpinList, Jmatrix, B0, RefFreq, HighOrder = True):      
-        self.SpinList = SpinList
-        self.Jmatrix = Jmatrix
-        self.B0 = B0
-        self.RefFreq = RefFreq
-        self.HighOrder = HighOrder
-        self.GetMatrixSize()
-        self.OperatorsFunctions = {'Iz': lambda Spin: Spin.Iz , 'Ix': lambda Spin: Spin.Ix, 'Iy': lambda Spin: Spin.Iy}
-        self.Int, self.Freq = self.GetFreqInt() 
-
-
-    def GetFreqInt(self):
-
-        a = time.time()
-        Htot, List = self.MakeH()
-
-        print('HamTime',time.time() -a)
-        a = time.time()
-       
-        BlocksDiag, BlocksT, = self.diagonalizeBlocks(Htot)
-        del Htot #Already empty, but remove anyway
-        print('Eig',time.time() -a)
-        a = time.time()
-
-        Detect, RhoZero = self.MakeDetectRho()
-        if Detect is None: #If no detect, return empty lists
-            return [],[]
-        print('Make detect zero',time.time() -a)
-        a = time.time()
-
-        Inten = []
-        Freq = []
-
-        b = 0
-        c = 0
-        d = 0
-        for index in range(len(List)):
-            for index2 in range(len(List)):
-
-                b = b - time.time()
-                tmpZero = RhoZero.tocsc()[:,List[index2]]
-                tmpZero = tmpZero.tocsr()[List[index],:]
-                tmpDetect = Detect.tocsc()[:,List[index2]]
-                tmpDetect = tmpDetect.tocsr()[List[index],:]
-                b = b + time.time()
-                if tmpZero.sum() > 1e-9 and  tmpDetect.sum() > 1e-9: #If signal
-                    c = c - time.time()
-                    #Take first dot while sparse: saves time
-                    #Take transpose every time. Takes hardly any time, and prevents double memory for T and inv(T)
-                    BRhoProp2 = np.dot(np.transpose(BlocksT[index]), tmpZero.dot(BlocksT[index2]))
-                    BDetectProp2 = np.dot(np.transpose(BlocksT[index]), tmpDetect.dot(BlocksT[index2]))
-                    BDetectProp2 = np.multiply(BDetectProp2 , BRhoProp2)
-                    c = c + time.time()
-                    Pos = np.where(BDetectProp2 > 1e-9)
-                    tmp = np.array(BDetectProp2[Pos])
-                    Inten = Inten  + list(tmp.flatten())
-                    tmp2 = BlocksDiag[index][Pos[0]] - BlocksDiag[index2][Pos[1]]
-                    Freq= Freq + list(np.abs(tmp2) - np.abs(self.RefFreq))
-                  
-        print('Sparse to dense slice' , b)
-        print('Dot',c)
-        print('Get int',time.time() -a)
-       
-        return Inten, Freq
-
-    def diagonalizeBlocks(self,Hams):
-        BlocksDiag = []
-        BlocksT = []
-
-        while len(Hams) > 0:
-            if Hams[0].shape[0] == 1: #If shape 1, no need for diag
-                BlocksDiag.append(Hams[0][0])
-                BlocksT.append(np.array(([[1]])))
-            else:
-                #Convert to dense for diagonalize
-                tmp1, tmp2 = np.linalg.eigh(Hams[0].todense())
-                BlocksDiag.append(tmp1)
-                BlocksT.append(tmp2)
-            del Hams[0] #Remove from list. This makes sure that, at any time
-            #Only 1 of the Hamiltonians is densely defined, and when diagonalizations took
-            #place, the original sparse matrix is removed
-        return BlocksDiag, BlocksT
-    def MakeHshift2(self):
-        #Using intelligent method that avoids Kron, only slightly faster then 1D kron
-        #Spin 1/2 only atm
-        HShift = np.zeros(self.MatrixSize)
-        for spin in range(len(self.SpinList)):
-            step = int(self.MatrixSize / (2 ** (spin + 1) ))
-            temp = np.zeros(self.MatrixSize)
-            for iii in range(2 ** (spin + 1)):
-                if iii % 2 == 0: #if even
-                    temp[iii * step: iii * step + step] = 0.5
-                else:
-                    temp[iii * step: iii * step + step] = -0.5
-            HShift += (self.SpinList[spin].shift * 1e-6 + 1) * self.SpinList[spin].Gamma * self.B0 *  temp
-        return np.diag(HShift)
-
-
-    def MakeH(self):
-        Jmatrix = self.Jmatrix
-        a = time.time()
-        if self.HighOrder:
-            OperatorsFunctions = {'Iz': lambda Spin: Spin.Iz , 'Ix': lambda Spin: Spin.Ix, 'Iy': lambda Spin: Spin.Iy}
-        else:
-            OperatorsFunctions = {'Iz': lambda Spin: Spin.Iz}
-      
-
-        #Make shift
-        HShift = np.zeros(self.MatrixSize)
-        for spin in range(len(self.SpinList)):
-            HShift +=  (self.SpinList[spin].shift * 1e-6 + 1) * self.SpinList[spin].Gamma * self.B0 *  self.MakeSingleIz(spin,self.OperatorsFunctions['Iz'])
-
-        Lines = []
-        Orders = []
-        HJz = np.zeros(self.MatrixSize)
-        for spin in range(len(self.SpinList)):
-            for subspin in range(spin,len(self.SpinList)):
-                    if Jmatrix[spin,subspin] != 0:
-                        HJz += self.MakeMultipleIz(OperatorsFunctions['Iz'],[spin,subspin]) * Jmatrix[spin,subspin]
-
-                        if self.HighOrder:
-                            if self.SpinList[spin].I == 0.5 and self.SpinList[subspin].I == 0.5:
-                                Line, order = self.MakeDoubleIxy(OperatorsFunctions['Ix'],spin,subspin)
-                                Lines.append(Line * Jmatrix[spin,subspin])
-                                Orders.append(order)
-                            else:
-                                tmp = self.MakeMultipleOperator(OperatorsFunctions['Ix'],[spin,subspin]) + self.MakeMultipleOperator(OperatorsFunctions['Iy'],[spin,subspin])
-
-                                tmp2  = np.where(tmp > 1e-3)
-                                order = abs(tmp2[1][0] - tmp2[0][0])
-                                Orders.append(order)
-                                Lines.append(np.real(np.diag(tmp,order)) * Jmatrix[spin,subspin])
-                                del tmp, tmp2
-
-
-        print('Get lines' , time.time() - a) 
-        #Get block diagonal from Lines/orders
-        Length = self.MatrixSize
-        List = []
-        OnesList = [] #List for all the single elements found (no need for further check)
-        for row in range(Length):
-            elements = []
-            if row != Length - 1:
-                for Line in range(len(Lines)):
-                    if len(Lines[Line]) > row: #If there is an element
-                        if Lines[Line][row] != 0:
-                            elements.append(Orders[Line] + row)
-
-            elements.append(row) #append diagonal (shift energy might be zero)
-            elements = set(elements)
-            new = True
-            for Set in range(len(List)):
-                if new:
-                    if len(elements & List[Set]) > 0:
-                        List[Set] = List[Set] | elements
-                        new = False
-            if new:
-                if len(elements) == -1: #If len 1, put in seperate list, no further checks
-                    OnesList.append(np.array(list(elements)))
-                else:
-                    List.append(elements)
-        for iii in range(len(List)): #Convert sets to np.array
-            List[iii] = np.sort(np.array(list(List[iii])))
-
-        List = List + OnesList #Append the oneslist
-        print([len(x) for x in List])
-        print('Get List' , time.time() - a) 
-        #Duplicate -orders
-        for index in range(len(Lines)):
-            Lines.append(Lines[index])
-            Orders.append(-Orders[index])
-        Lines.append(HJz + HShift)
-        Orders.append(0)
-        Htot =  scipy.sparse.diags(Lines, Orders)
-        print('Make Htot' , time.time() - a) 
-        #Make block diag Hamiltonians
-        Hams = []
-        for Blk in List:
-            if len(Blk) == 1: #Only take diagonal (which is the shift)
-                #Indexing from sparse Htot takes relatively long
-                Hams.append(np.array([HShift[Blk] + HJz[Blk]]))
-            else:
-                tmp = Htot.tocsc()[:,Blk]
-                tmp = tmp.tocsr()[Blk,:]
-                Hams.append(tmp)
-
-        print('Make block' , time.time() - a) 
-        return Hams, List
-
-    def MakeDoubleIxy(self,Ix,spin,subspin):
-        list = [i for i in range(len(self.SpinList))]
-        beforelength = 1
-        for iii in list[0:spin]:
-            beforelength *= int(self.SpinList[iii].I * 2 + 1)
-
-        middlelength = 1
-        for jjj in list[spin + 1:subspin]:
-            middlelength *= int(self.SpinList[jjj].I * 2 + 1)
-
-        afterlength = 1
-        for kkk in list[subspin + 1:]:
-            afterlength *= int(self.SpinList[kkk].I * 2 + 1)
-
-        I1x = Ix(self.SpinList[spin])
-        I2x = Ix(self.SpinList[subspin])
-        
-        Isize = I1x.shape[0]
-        I2size = I2x.shape[0]
-
-        Pre = np.diag(I1x*I2x,1)
-        Pre = np.append(Pre,0)
-
-
-        Pre = np.tile(np.repeat(Pre,middlelength), beforelength)
-        Pre = np.insert(Pre,np.arange(1,len(Pre)),0)
-        Pre = np.repeat(Pre,afterlength)
-
-        orderM = (middlelength*I2size - 1) * afterlength #Only the -1 diagonal is needed, as Ix + Iy cancel the other (and doubles the -1)
-        orderP = (middlelength*I2size + 1) * afterlength
-        
-        Pre = np.append([0] * int((orderP-orderM)/2) , Pre)
-
-        totlength = Isize * I2size * beforelength * middlelength * afterlength
-        length = totlength - orderM
-        Pre = Pre[:length]
-
-        return 2 * Pre, orderM #double the result to simulate Ix + Iy
-
-    def MakeDetectRho(self):
-        Lines = []
-        Orders = []
-        DetSelect = []
-        for spin in range(len(self.SpinList)):
-            #Make single spin operator when needed. Only Ix needs to be saved temporarily, as it is used twice 
-
-            Line, Pos =  self.MakeSingleIxy(spin,self.OperatorsFunctions['Ix'],'Ix')
-            Lines.append(Line)
-            Orders.append(Pos)
-            if self.SpinList[spin].Detect: #Add to detection
-                DetSelect.append(spin)
-
-        if len(Lines) == 0 or len(DetSelect) == 0:
-            Detect = None
-            RhoZero = None
-        else:
-            Detect =  scipy.sparse.diags([Lines[x] for x in DetSelect], [Orders[x] for x in DetSelect]) * 2 #Iplus = 2 * Ix (above triangular)
-            RhoZero = scipy.sparse.diags(Lines, Orders) / self.MatrixSize # Scale with Partition Function of boltzmann equation
-            #Should RhoZero have lower diag also? Detect has no intensity there, so should not matter...
-
-        return Detect, RhoZero 
-
-    def MakeSingleIz(self,spin,Operator):
-        #Optimized for Iz: 1D kron only
-        IList = []
-        for subspin in range(len(self.SpinList)):
-            if spin == subspin:
-                IList.append(np.diag(Operator(self.SpinList[subspin])))
-            else:
-                IList.append(np.diag(self.SpinList[subspin].Ident))
-        
-        return self.kronList(IList)
-
-
-    def MakeSingleIxy(self,spin,Operator,Type):
-        #Optimized routine to get Ix|Y for a single spin
-        #Returned are the values, and the level of the diagonal were it should be positioned
-        #Only Iy and Ix can be constructed from this.
-        list = [i for i in range(len(self.SpinList))]
-        beforelength = 1
-        for iii in list[0:spin]:
-            beforelength *= int(self.SpinList[iii].I * 2 + 1)
-
-        afterlength = 1
-        for jjj in list[spin + 1:]:
-            afterlength *= int(self.SpinList[jjj].I * 2 + 1)
-
-        Op = Operator(self.SpinList[spin])
-        Pre = np.append(np.diag(Op,1),0)
-        Pre = np.tile(np.repeat(Pre,afterlength), beforelength)
-        Pre = Pre[:-afterlength]
-        return Pre, afterlength
-
-    def MakeMultipleOperator(self,Operator,SelectList):
-       IList = []
-       for spin in  range(len(self.SpinList)):
-           if spin in SelectList:
-               IList.append(Operator(self.SpinList[spin]))
-           else:
-               IList.append(self.SpinList[spin].Ident)
-       Matrix = self.kronList(IList)
-       return Matrix
-
-    def MakeMultipleIz(self,Operator,SelectList):
-        #1D kron. Reasonably efficient
-       IList = []
-       for spin in  range(len(self.SpinList)):
-           if spin in SelectList:
-               IList.append(np.diag(Operator(self.SpinList[spin])))
-           else:
-               IList.append(np.diag(self.SpinList[spin].Ident))
-       Matrix = self.kronList(IList)
-       return Matrix
-
-    def kronList(self,List):
-        M = 1
-        for element in List:
-            M = np.kron(M , element)
-        return M
-        
-    def GetMatrixSize(self):
-        self.MatrixSize = 1
-        for spin in self.SpinList:
-            self.MatrixSize = int(self.MatrixSize * (spin.I * 2 + 1))
-        
-def MakeSpectrum(Intensities, Frequencies, AxisLimits, RefFreq,LineBroadening,NumPoints):
-    a = time.time()
-    Limits = tuple(AxisLimits * RefFreq * 1e-6)
-    sw = Limits[1] - Limits[0]
-    dw = 1.0/ sw
-    lb = LineBroadening * np.pi
-    #Make spectrum
-    Spectrum, Axis = np.histogram(Frequencies, int(NumPoints), Limits , weights = Intensities)
-    
-    if np.sum(np.isnan(Spectrum)):
-       Spectrum = np.zeros_like(Axis)
-    elif np.max(Spectrum) == 0.0:
-        pass
-    else:
-       Fid = np.fft.ifft(np.fft.ifftshift(np.conj(scipy.signal.hilbert(Spectrum))))
-       TimeAxis = np.linspace(0,NumPoints-1,NumPoints) * dw
-       Fid = Fid * np.exp(-TimeAxis * lb)
-       Spectrum = np.real(np.fft.fftshift(np.fft.fft(Fid)))
-    Axis = (Axis[1:] + 0.5 * (Axis[0] - Axis[1]))  / (RefFreq * 1e-6)
-    return Spectrum * NumPoints, Axis, RefFreq
 
 class PlotFrame(Plot1DFrame):
 
@@ -984,31 +630,6 @@ class addSliderWindow(QtWidgets.QDialog):
         self.deleteLater()
 
 
-def expandSpinsys(SpinList,Jmatrix):
-    NSpins = len(SpinList)
-    fullSpinList = []
-    fullSpinListIndex = []
-    for Spin in range(NSpins):
-        #spinTemp = spinCls(self.spinSysWidgets['Isotope'][Spin].text(),safeEval(self.spinSysWidgets['Shift'][Spin].text()),True)
-        spinTemp = spinCls(SpinList[Spin][0],SpinList[Spin][1],SpinList[Spin][3])
-        multi = SpinList[Spin][2]
-        for iii in range(multi):
-            fullSpinList.append(spinTemp)
-            fullSpinListIndex.append(Spin)
-    
-    totalSpins = len(fullSpinListIndex)    
-    FullJmatrix = np.zeros((totalSpins,totalSpins))    
-    for Spin in range(totalSpins):
-        for subSpin in range(totalSpins):
-            FullJmatrix[Spin,subSpin] = Jmatrix[fullSpinListIndex[Spin],fullSpinListIndex[subSpin]]
-        
-    #------------------    
-    if FullJmatrix is None:
-        FullJmatrix = np.zeros(totalSpins,totalSpins)
-
-    return fullSpinList, FullJmatrix
-
-
 class MainProgram(QtWidgets.QMainWindow):
 
     def __init__(self, root):
@@ -1087,10 +708,13 @@ class MainProgram(QtWidgets.QMainWindow):
     def sim(self,ResetXAxis = False, ResetYAxis = False, recalc = True):
         if len(self.SpinList) > 0:
             if recalc:
-                fullSpinList, FullJmatrix = expandSpinsys(self.SpinList,self.Jmatrix)
-                self.SpinSys = spinSystemCls(fullSpinList, FullJmatrix, self.B0,self.RefFreq, self.StrongCoupling)
+                print(self.B0)
+                print(self.SpinList)
+                print(self.Limits)
+                fullSpinList, FullJmatrix = en.expandSpinsys(self.SpinList,self.Jmatrix)
+                self.SpinSys = en.spinSystemCls(fullSpinList, FullJmatrix, self.B0,self.RefFreq, self.StrongCoupling)
                 #self.Intensities, self.Frequencies  = GetFreqInt(SpinSystem,self.RefFreq)
-            self.Spectrum, self.Axis, self.RefFreq = MakeSpectrum(self.SpinSys.Int, self.SpinSys.Freq, self.Limits, self.RefFreq, self.Lb, self.NumPoints)
+            self.Spectrum, self.Axis, self.RefFreq = en.MakeSpectrum(self.SpinSys.Int, self.SpinSys.Freq, self.Limits, self.RefFreq, self.Lb, self.NumPoints)
         else:
             self.Axis = self.Limits
             self.Spectrum = np.array([0,0])
