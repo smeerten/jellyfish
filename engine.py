@@ -156,6 +156,7 @@ class spinSystemCls:
             #Only 1 of the Hamiltonians is densely defined, and when diagonalizations took
             #place, the original sparse matrix is removed
         return BlocksDiag, BlocksT
+
     def MakeHshift2(self):
         #Using intelligent method that avoids Kron, only slightly faster then 1D kron
         #Spin 1/2 only atm
@@ -195,18 +196,17 @@ class spinSystemCls:
                         HJz += self.MakeMultipleIz(OperatorsFunctions['Iz'],[spin,subspin]) * Jmatrix[spin,subspin]
 
                         if self.HighOrder:
-                            if self.SpinList[spin].I == 0.5 and self.SpinList[subspin].I == 0.5:
-                                Line, order = self.MakeDoubleIxy(OperatorsFunctions['Ix'],spin,subspin)
-                                Lines.append(Line * Jmatrix[spin,subspin])
-                                Orders.append(order)
-                            else:
-                                tmp = self.MakeMultipleOperator(OperatorsFunctions['Ix'],[spin,subspin]) + self.MakeMultipleOperator(OperatorsFunctions['Iy'],[spin,subspin])
-
-                                tmp2  = np.where(tmp > 1e-3)
-                                order = abs(tmp2[1][0] - tmp2[0][0])
-                                Orders.append(order)
-                                Lines.append(np.real(np.diag(tmp,order)) * Jmatrix[spin,subspin])
-                                del tmp, tmp2
+                            #if self.SpinList[spin].I == 0.5 and self.SpinList[subspin].I == 0.5:
+                            #    Line, order = self.MakeDoubleIxy(OperatorsFunctions['Ix'],spin,subspin)
+                            #else:
+                                #tmp = self.MakeMultipleOperator(OperatorsFunctions['Ix'],[spin,subspin]) + self.MakeMultipleOperator(OperatorsFunctions['Iy'],[spin,subspin])
+                                #tmp2  = np.where(tmp > 1e-3)
+                                #order = abs(tmp2[1][0] - tmp2[0][0])
+                                #Lines.append(np.real(np.diag(tmp,order)) * Jmatrix[spin,subspin])
+                            Val, order = self.MakeDoubleIxy2( OperatorsFunctions['Ix'], spin, subspin)
+                            Orders.append(order)
+                            Lines.append(Val * Jmatrix[spin,subspin])
+                            del Val
 
 
         print('Get lines' , time.time() - a) 
@@ -263,7 +263,53 @@ class spinSystemCls:
         print('Make block' , time.time() - a) 
         return Hams, List
 
-    def MakeDoubleIxy(self,Ix,spin,subspin):
+    #def MakeDoubleIxy(self,Ix,spin,subspin):
+    #    list = [i for i in range(len(self.SpinList))]
+    #    beforelength = 1
+    #    for iii in list[0:spin]:
+    #        beforelength *= int(self.SpinList[iii].I * 2 + 1)
+
+    #    middlelength = 1
+    #    for jjj in list[spin + 1:subspin]:
+    #        middlelength *= int(self.SpinList[jjj].I * 2 + 1)
+
+    #    afterlength = 1
+    #    for kkk in list[subspin + 1:]:
+    #        afterlength *= int(self.SpinList[kkk].I * 2 + 1)
+
+    #    I1x = Ix(self.SpinList[spin])
+    #    I2x = Ix(self.SpinList[subspin])
+    #    
+    #    Isize = I1x.shape[0]
+    #    I2size = I2x.shape[0]
+
+    #    Pre = np.diag(I1x*I2x,1)
+    #    Pre = np.append(Pre,0)
+
+
+    #    Pre = np.tile(np.repeat(Pre,middlelength), beforelength)
+    #    Pre = np.insert(Pre,np.arange(1,len(Pre)),0)
+    #    Pre = np.repeat(Pre,afterlength)
+
+    #    orderM = (middlelength*I2size - 1) * afterlength #Only the -1 diagonal is needed, as Ix + Iy cancel the other (and doubles the -1)
+    #    orderP = (middlelength*I2size + 1) * afterlength
+    #    
+    #    Pre = np.append([0] * int((orderP-orderM)/2) , Pre)
+
+    #    totlength = Isize * I2size * beforelength * middlelength * afterlength
+    #    length = totlength - orderM
+    #    Pre = Pre[:length]
+
+    #    return 2 * Pre, orderM #double the result to simulate Ix + Iy
+
+    def MakeDoubleIxy2(self, Ix, spin, subspin):
+        #Function to create IxSx + IySy for any system
+        #It creates a 1D list with the values, and the order of the diagonal were
+        #it should be placed. This is really efficient, as no 2D kron has to be done
+
+        #Beforelength: cumprod of all identity operators sizes before the first Ix
+        #Middlelength: same, but for all between the two Ix
+        #afterlength: same, but for all after the last Ix
         list = [i for i in range(len(self.SpinList))]
         beforelength = 1
         for iii in list[0:spin]:
@@ -277,30 +323,19 @@ class spinSystemCls:
         for kkk in list[subspin + 1:]:
             afterlength *= int(self.SpinList[kkk].I * 2 + 1)
 
-        I1x = Ix(self.SpinList[spin])
-        I2x = Ix(self.SpinList[subspin])
-        
-        Isize = I1x.shape[0]
-        I2size = I2x.shape[0]
+        I1x = np.diag(Ix(self.SpinList[spin]),1)
+        I2x = np.diag(Ix(self.SpinList[subspin]),1)
+        Base = 2 *np.kron(I1x,np.append(I2x,0))
 
-        Pre = np.diag(I1x*I2x,1)
-        Pre = np.append(Pre,0)
+        #This part is the black magic. Essentially, it does the same as 2D kron, but makes use of the
+        #very specific problem we encounter here: Only identity operators or first diagonal only (Ix + Iy) 
+        #are encountered here
+        Val = np.tile(np.append(np.tile(np.repeat(Base,afterlength),middlelength),[0] * (len(I2x) + 1) * middlelength * afterlength) ,beforelength)
+        Val = Val[0: - (len(I2x) + 1) * middlelength * afterlength]
+        Val = np.append([0] * afterlength,Val)
 
-
-        Pre = np.tile(np.repeat(Pre,middlelength), beforelength)
-        Pre = np.insert(Pre,np.arange(1,len(Pre)),0)
-        Pre = np.repeat(Pre,afterlength)
-
-        orderM = (middlelength*I2size - 1) * afterlength #Only the -1 diagonal is needed, as Ix + Iy cancel the other (and doubles the -1)
-        orderP = (middlelength*I2size + 1) * afterlength
-        
-        Pre = np.append([0] * int((orderP-orderM)/2) , Pre)
-
-        totlength = Isize * I2size * beforelength * middlelength * afterlength
-        length = totlength - orderM
-        Pre = Pre[:length]
-
-        return 2 * Pre, orderM #double the result to simulate Ix + Iy
+        order = self.MatrixSize - len(Val)
+        return Val, order
 
     def MakeDetectRho(self):
         Lines = []
@@ -356,15 +391,15 @@ class spinSystemCls:
         Pre = Pre[:-afterlength]
         return Pre, afterlength
 
-    def MakeMultipleOperator(self,Operator,SelectList):
-       IList = []
-       for spin in  range(len(self.SpinList)):
-           if spin in SelectList:
-               IList.append(Operator(self.SpinList[spin]))
-           else:
-               IList.append(self.SpinList[spin].Ident)
-       Matrix = self.kronList(IList)
-       return Matrix
+    #def MakeMultipleOperator(self,Operator,SelectList):
+    #   IList = []
+    #   for spin in  range(len(self.SpinList)):
+    #       if spin in SelectList:
+    #           IList.append(Operator(self.SpinList[spin]))
+    #       else:
+    #           IList.append(self.SpinList[spin].Ident)
+    #   Matrix = self.kronList(IList)
+    #   return Matrix
 
     def MakeMultipleIz(self,Operator,SelectList):
         #1D kron. Reasonably efficient
