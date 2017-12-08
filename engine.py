@@ -123,13 +123,13 @@ class spinSystemCls:
         c = 0
         d = 0
         for index in range(len(List)):
+            tmpZero2 = RhoZero.tocsr()[List[index],:]
+            tmpDetect2 = Detect.tocsr()[List[index],:]
             for index2 in range(len(List)):
 
                 b = b - time.time()
-                tmpZero = RhoZero.tocsc()[:,List[index2]]
-                tmpZero = tmpZero.tocsr()[List[index],:]
-                tmpDetect = Detect.tocsc()[:,List[index2]]
-                tmpDetect = tmpDetect.tocsr()[List[index],:]
+                tmpZero = tmpZero2.tocsc()[:,List[index2]]
+                tmpDetect = tmpDetect2.tocsc()[:,List[index2]]
                 b = b + time.time()
                 if tmpZero.sum() > 1e-9 and  tmpDetect.sum() > 1e-9: #If signal
                     c = c - time.time()
