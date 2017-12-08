@@ -54,24 +54,35 @@ for i in range(N):
             abundanceList[i] = isoN[5]
         freqRatioList[i] = isoN[8]
 
-
-
 class spinCls:
-    def __init__(self, Nucleus, shift, Detect):
+    def __init__(self, Nucleus, shift, Detect, multi = 1):
         self.index = ABBREVLIST.index(Nucleus)
         self.I = spinList[self.index]
         self.Gamma = freqRatioList[self.index] * GAMMASCALE * 1e6
         self.shift = shift
         self.Detect = Detect
-        self.m = np.linspace(self.I,-self.I,self.I*2+1)
-        self.Iarray = np.linspace(self.I,self.I,self.I*2+1)
-        self.Iz = np.diag(self.m)
-        self.Iplus = np.diag(np.sqrt(self.I*(self.I+1)-self.m*(self.m+1))[1:],1)
-        self.Imin = np.diag(np.diag(self.Iplus,1),-1)
-        self.Ix = 0.5 * (self.Iplus + self.Imin)
-        self.Iy = -0.5j * (self.Iplus - self.Imin)
-        
-        self.Ident = np.eye(int(self.I*2+1))
+        if self.I == 0.5 and multi >1:
+            if multi == 2:
+                self.I = 1.5
+                self.Iz = np.diag([1,0,-1,0])
+                self.Ix = np.diag([0.5 * np.sqrt(2), 0.5 * np.sqrt(2),0],1) + np.diag([0.5 * np.sqrt(2), 0.5 * np.sqrt(2),0],-1)
+                self.Iy = np.diag([ - 0.5j * np.sqrt(2), - 0.5j * np.sqrt(2),0],1) + np.diag([0.5j * np.sqrt(2), 0.5j * np.sqrt(2),0],-1)
+                self.Ident = np.eye(int(self.I*2+1))
+            if multi == 3:
+                self.I = 3.5
+                self.Iz = np.diag([1.5,0.5,-0.5,-1.5,0.5,-0.5,0.5,-0.5])
+                self.Ix = np.diag([0.5 * np.sqrt(3), 1, 0.5 * np.sqrt(3),0,0.5,0,0.5],1)
+                self.Ident = np.eye(int(self.I*2+1))
+
+            pass
+        else:
+            self.m = np.linspace(self.I,-self.I,self.I*2+1)
+            self.Iz = np.diag(self.m)
+            self.Iplus = np.diag(np.sqrt(self.I*(self.I+1)-self.m*(self.m+1))[1:],1)
+            self.Imin = np.diag(np.diag(self.Iplus,1),-1)
+            self.Ix = 0.5 * (self.Iplus + self.Imin)
+            self.Iy = -0.5j * (self.Iplus - self.Imin)
+            self.Ident = np.eye(int(self.I*2+1))
 
 class spinSystemCls:
     def __init__(self, SpinList, Jmatrix, B0, RefFreq, HighOrder = True):      
@@ -410,29 +421,33 @@ def MakeSpectrum(Intensities, Frequencies, AxisLimits, RefFreq,LineBroadening,Nu
     Axis = (Axis[1:] + 0.5 * (Axis[0] - Axis[1]))  / (RefFreq * 1e-6)
     return Spectrum * NumPoints, Axis, RefFreq
 
+
 def expandSpinsys(SpinList,Jmatrix):
     NSpins = len(SpinList)
     fullSpinList = []
     fullSpinListIndex = []
     for Spin in range(NSpins):
-        #spinTemp = spinCls(self.spinSysWidgets['Isotope'][Spin].text(),safeEval(self.spinSysWidgets['Shift'][Spin].text()),True)
-        spinTemp = spinCls(SpinList[Spin][0],SpinList[Spin][1],SpinList[Spin][3])
         multi = SpinList[Spin][2]
-        for iii in range(multi):
+        if SpinList[Spin][0] == '1H' and multi < 4 and multi > 1:
+            spinTemp = spinCls(SpinList[Spin][0],SpinList[Spin][1],SpinList[Spin][3],multi)
             fullSpinList.append(spinTemp)
             fullSpinListIndex.append(Spin)
-    
+        else:
+            spinTemp = spinCls(SpinList[Spin][0],SpinList[Spin][1],SpinList[Spin][3])
+            for iii in range(multi):
+                fullSpinList.append(spinTemp)
+                fullSpinListIndex.append(Spin)
     totalSpins = len(fullSpinListIndex)    
     FullJmatrix = np.zeros((totalSpins,totalSpins))    
     for Spin in range(totalSpins):
         for subSpin in range(totalSpins):
             FullJmatrix[Spin,subSpin] = Jmatrix[fullSpinListIndex[Spin],fullSpinListIndex[subSpin]]
         
+    for elem in fullSpinList:
+        print(np.diag(elem.Ix,1))
+        print(np.diag(elem.Iz))
     #------------------    
     if FullJmatrix is None:
         FullJmatrix = np.zeros(totalSpins,totalSpins)
-
     return fullSpinList, FullJmatrix
-
-
 
