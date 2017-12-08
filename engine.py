@@ -123,8 +123,10 @@ class spinSystemCls:
         c = 0
         d = 0
         for index in range(len(List)):
+            b = b - time.time()
             tmpZero2 = RhoZero.tocsr()[List[index],:]
             tmpDetect2 = Detect.tocsr()[List[index],:]
+            b = b + time.time()
             for index2 in range(len(List)):
 
                 b = b - time.time()
