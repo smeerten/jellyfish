@@ -708,9 +708,6 @@ class MainProgram(QtWidgets.QMainWindow):
     def sim(self,ResetXAxis = False, ResetYAxis = False, recalc = True):
         if len(self.SpinList) > 0:
             if recalc:
-                print(self.B0)
-                print(self.SpinList)
-                print(self.Limits)
                 fullSpinList, FullJmatrix = en.expandSpinsys(self.SpinList,self.Jmatrix)
                 self.SpinSys = en.spinSystemCls(fullSpinList, FullJmatrix, self.B0,self.RefFreq, self.StrongCoupling)
                 #self.Intensities, self.Frequencies  = GetFreqInt(SpinSystem,self.RefFreq)
