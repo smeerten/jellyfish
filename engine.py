@@ -85,7 +85,8 @@ class spinCls:
             self.Ident = np.eye(int(self.I*2+1))
 
 class spinSystemCls:
-    def __init__(self, SpinList, Jmatrix, B0, RefFreq, HighOrder = True):      
+    def __init__(self, SpinList, Jmatrix, B0, RefFreq, HighOrder = True, BlockSize = 500):
+        self.BlockSize = BlockSize
         self.SpinList = SpinList
         self.Jmatrix = Jmatrix
         self.B0 = B0
@@ -247,7 +248,6 @@ class spinSystemCls:
             List[iii] = np.sort(np.array(list(List[iii])))
 
         List = List + OnesList #Append the oneslist
-        print([len(x) for x in List])
         print('Get List' , time.time() - a) 
         #Duplicate -orders
         for index in range(len(Lines)):
@@ -257,6 +257,25 @@ class spinSystemCls:
         Orders.append(0)
         Htot =  scipy.sparse.diags(Lines, Orders)
         print('Make Htot' , time.time() - a) 
+
+
+        #Merge small parts
+        List.sort(key=lambda x: len(x))
+        NewList = []
+        tmp = []
+        while len(List) != 0:
+            new = list(List.pop(0))
+            if len(tmp) + len(new) <= self.BlockSize:
+                tmp = tmp + new
+            else:
+                NewList.append(tmp)
+                tmp = new
+        if len(tmp) != 0:
+            NewList.append(tmp)
+        List = NewList
+        print([len(x) for x in List])
+        print('Reorder List' , time.time() - a) 
+
         #Make block diag Hamiltonians
         Hams = []
         for Blk in List:
@@ -443,9 +462,6 @@ def expandSpinsys(SpinList,Jmatrix):
         for subSpin in range(totalSpins):
             FullJmatrix[Spin,subSpin] = Jmatrix[fullSpinListIndex[Spin],fullSpinListIndex[subSpin]]
         
-    for elem in fullSpinList:
-        print(np.diag(elem.Ix,1))
-        print(np.diag(elem.Iz))
     #------------------    
     if FullJmatrix is None:
         FullJmatrix = np.zeros(totalSpins,totalSpins)
