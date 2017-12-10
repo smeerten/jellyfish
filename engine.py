@@ -246,11 +246,33 @@ class spinSystemCls:
                     OnesList.append(np.array(list(elements)))
                 else:
                     List.append(elements)
+
         for iii in range(len(List)): #Convert sets to np.array
             List[iii] = np.sort(np.array(list(List[iii])))
 
         List = List + OnesList #Append the oneslist
         print('Get List' , time.time() - a) 
+         #New==================
+        First = True
+        List2 = []
+        for elem in range(len(Lines)):
+            tmp =np.where(Lines[elem] > 0)[0]
+            tmp2 = np.zeros((len(tmp),2))
+            tmp2[:,0] = tmp
+            tmp2[:,1] = tmp + Orders[elem]
+            if First:
+                List2 = tmp2
+                First = False
+            else:
+                List2 = np.append(List2,tmp2,0)
+
+        Singles = set(np.arange(Length)) - set(np.unique(List2))
+        Remainer = np.unique(List2)
+        Singles = list(np.array(list(Singles))[None].T) #Convert to column matrix --> list of array indexes
+
+        #New=================== 
+
+        print('Get List2' , time.time() - a) 
         #Duplicate -orders
         for index in range(len(Lines)):
             Lines.append(Lines[index])
