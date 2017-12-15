@@ -22,6 +22,7 @@ import numpy as np
 import time
 import scipy.sparse
 import scipy.signal
+import networkx as nx
 
 
 GAMMASCALE = 42.577469 / 100
@@ -221,58 +222,15 @@ class spinSystemCls:
                             del Val
 
         print('Get lines' , time.time() - a) 
+
         #Get block diagonal from Lines/orders
-        Length = self.MatrixSize
-        List = []
-        OnesList = [] #List for all the single elements found (no need for further check)
-        for row in range(Length):
-            elements = []
-            if row != Length - 1:
-                for Line in range(len(Lines)):
-                    if len(Lines[Line]) > row: #If there is an element
-                        if Lines[Line][row] != 0:
-                            elements.append(Orders[Line] + row)
-
-            elements.append(row) #append diagonal (shift energy might be zero)
-            elements = set(elements)
-            new = True
-            for Set in range(len(List)):
-                if new:
-                    if len(elements & List[Set]) > 0:
-                        List[Set] = List[Set] | elements
-                        new = False
-            if new:
-                if len(elements) == -1: #If len 1, put in seperate list, no further checks
-                    OnesList.append(np.array(list(elements)))
-                else:
-                    List.append(elements)
-
-        for iii in range(len(List)): #Convert sets to np.array
-            List[iii] = np.sort(np.array(list(List[iii])))
-
-        List = List + OnesList #Append the oneslist
-        print('Get List' , time.time() - a) 
-         #New==================
-        First = True
-        List2 = []
-        for elem in range(len(Lines)):
-            tmp =np.where(Lines[elem] > 0)[0]
-            tmp2 = np.zeros((len(tmp),2))
-            tmp2[:,0] = tmp
-            tmp2[:,1] = tmp + Orders[elem]
-            if First:
-                List2 = tmp2
-                First = False
-            else:
-                List2 = np.append(List2,tmp2,0)
-
-        Singles = set(np.arange(Length)) - set(np.unique(List2))
-        Remainer = np.unique(List2)
-        Singles = list(np.array(list(Singles))[None].T) #Convert to column matrix --> list of array indexes
-
-        #New=================== 
-
-        print('Get List2' , time.time() - a) 
+        #Connect = self.get_connections(Lines,Orders)
+        #print('Get connection old' , time.time() - a) 
+        #Connect = self.get_connections_old2(Lines,Orders)
+        #print('Get connection old2' , time.time() - a) 
+        Connect = self.get_connections_new(Lines,Orders)
+        print('Get connection new' , time.time() - a) 
+       
         #Duplicate -orders
         for index in range(len(Lines)):
             Lines.append(Lines[index])
@@ -284,11 +242,11 @@ class spinSystemCls:
 
 
         #Merge small parts
-        List.sort(key=lambda x: len(x))
+        Connect.sort(key=lambda x: len(x))
         NewList = []
         tmp = []
-        while len(List) != 0:
-            new = list(List.pop(0))
+        while len(Connect) != 0:
+            new = list(Connect.pop(0))
             if len(tmp) + len(new) <= self.BlockSize:
                 tmp = tmp + new
             else:
@@ -296,13 +254,13 @@ class spinSystemCls:
                 tmp = new
         if len(tmp) != 0:
             NewList.append(tmp)
-        List = NewList
-        print([len(x) for x in List])
+        Connect = NewList
+        print([len(x) for x in Connect])
         print('Reorder List' , time.time() - a) 
 
         #Make block diag Hamiltonians
         Hams = []
-        for Blk in List:
+        for Blk in Connect:
             if len(Blk) == 1: #Only take diagonal (which is the shift)
                 #Indexing from sparse Htot takes relatively long
                 Hams.append(np.array([HShift[Blk] + HJz[Blk]]))
@@ -312,7 +270,121 @@ class spinSystemCls:
                 Hams.append(tmp)
 
         print('Make block' , time.time() - a) 
-        return Hams, List
+        return Hams, Connect
+
+
+    def get_connections(self,Lines,Orders):
+        Length = self.MatrixSize
+        First = True
+        List2 = np.array([],dtype = int)
+        for elem in range(len(Lines)):
+            tmp = np.where(Lines[elem] > 0)[0]
+            tmp2 = np.zeros((len(tmp),2),dtype=int)
+            tmp2[:,0] = tmp
+            tmp2[:,1] = tmp + Orders[elem]
+            if First:
+                List2 = tmp2
+                First = False
+            else:
+                List2 = np.append(List2,tmp2,0)
+        Count = np.bincount(np.ravel(List2) ,minlength = Length)
+        NonZero = np.where(Count > 0)[0]
+        Zero = [[x] for x in list(np.where(Count == 0)[0])]
+
+        List = []
+        for row in NonZero:
+            elements = []
+            if row != Length - 1:
+                for Line in range(len(Lines)):
+                    if len(Lines[Line]) > row: #If there is an element
+                        if Lines[Line][row] != 0:
+                            elements.append(Orders[Line] + row)
+            elements.append(row) #append diagonal (shift energy might be zero)
+            elements = set(elements)
+            new = True
+            for Set in range(len(List)):
+                if new:
+                    if len(elements & List[Set]) > 0:
+                        List[Set] = List[Set] | elements
+                        new = False
+            if new:
+                List.append(elements)
+
+        for iii in range(len(List)): #Convert sets to np.array
+            List[iii] = np.sort(np.array(list(List[iii])))
+
+        List = List + Zero #Append the oneslist
+        return List
+
+    def get_connections_old2(self,Lines,Orders):
+        Length = self.MatrixSize
+        First = True
+        List2 = np.array([],dtype = int)
+        for elem in range(len(Lines)):
+            tmp = np.where(Lines[elem] > 0)[0]
+            tmp2 = np.zeros((len(tmp),2),dtype=int)
+            tmp2[:,0] = tmp
+            tmp2[:,1] = tmp + Orders[elem]
+            if First:
+                List2 = tmp2
+                First = False
+            else:
+                List2 = np.append(List2,tmp2,0)
+        Count = np.bincount(np.ravel(List2) ,minlength = Length)
+        NonZero = np.where(Count > 0)[0]
+        Zero = [[x] for x in list(np.where(Count == 0)[0])]
+        
+        if len(List2) == 0:
+            return
+        Sets = [set(x) for x in List2]
+        fullSets = []
+        fullPos = []
+        Positions = [x for x in range(len(Sets))]
+        nowPos = 0
+        while nowPos != None:
+            #print(Sets)
+            startfound = False
+            current = Sets[nowPos]
+            ownPos= Positions[nowPos] #own always in connection
+            nowPos = None
+            newPos = []
+            for pos in range(len(Sets)):
+                if Sets[pos] != None:
+                    if len(current & Sets[pos]) > 0: #If connection
+                        current = current | Sets[pos]
+                        newPos.append(Positions[pos])
+                        Sets[pos] = None
+                    else:
+                        if startfound is False:
+                            startfound = True
+                            nowPos = pos
+            fullSets.append(current)
+            fullPos.append(newPos)
+
+        return fullSets
+
+    def get_connections_new(self,Lines,Orders):
+        Length = self.MatrixSize
+        First = True
+        List2 = np.array([],dtype = int)
+        for elem in range(len(Lines)):
+            tmp = np.where(Lines[elem] > 0)[0]
+            tmp2 = np.zeros((len(tmp),2),dtype=int)
+            tmp2[:,0] = tmp
+            tmp2[:,1] = tmp + Orders[elem]
+            if First:
+                List2 = tmp2
+                First = False
+            else:
+                List2 = np.append(List2,tmp2,0)
+
+        g = nx.Graph()
+        g.add_nodes_from(range(self.MatrixSize))
+        g.add_edges_from(List2)
+        Links = nx.connected_components(g)
+        List2 = [list(x) for x in Links]
+        return List2
+
 
     def MakeDoubleIxy(self, Ix, spin, subspin):
         #Function to create IxSx + IySy for any system
