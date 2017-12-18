@@ -302,8 +302,9 @@ class spinSystemCls:
             else:
                 List2 = np.append(List2,tmp2,0)
         Adj = [set([x]) for x in range(Length)]
-        [Adj[x[0]].add(x[1]) for x in List2]
-        [Adj[x[1]].add(x[0]) for x in List2]
+        for x in List2:
+            Adj[x[0]].add(x[1])
+            Adj[x[1]].add(x[0])
 
         seen = set()
         Connect = []
