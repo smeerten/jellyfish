@@ -99,15 +99,13 @@ class spinSystemCls:
 
     def GetFreqInt(self):
 
-        a = time.time()
-        Htot, List = self.MakeH()
+        #a = time.time()
+        #BlocksDiag, BlocksT, List, Htot = self.MakeH()
 
-        print('HamTime',time.time() -a)
+        #print('HamTime',time.time() -a)
         a = time.time()
-       
-        BlocksDiag, BlocksT, = self.diagonalizeBlocks(Htot)
-        del Htot #Already empty, but remove anyway
-        print('Eig',time.time() -a)
+        BlocksDiag, BlocksT, List = self.MakeH2()
+        print('HamTime',time.time() -a)
         a = time.time()
 
         Detect, RhoZero = self.MakeDetectRho()
@@ -158,23 +156,23 @@ class spinSystemCls:
         return Inten, Freq
        
 
-    def diagonalizeBlocks(self,Hams):
-        BlocksDiag = []
-        BlocksT = []
+    #def diagonalizeBlocks(self,Hams):
+    #    BlocksDiag = []
+    #    BlocksT = []
 
-        while len(Hams) > 0:
-            if Hams[0].shape[0] == 1: #If shape 1, no need for diag
-                BlocksDiag.append(Hams[0][0])
-                BlocksT.append(np.array(([[1]])))
-            else:
-                #Convert to dense for diagonalize
-                tmp1, tmp2 = np.linalg.eigh(Hams[0].todense())
-                BlocksDiag.append(tmp1)
-                BlocksT.append(tmp2)
-            del Hams[0] #Remove from list. This makes sure that, at any time
-            #Only 1 of the Hamiltonians is densely defined, and when diagonalizations took
-            #place, the original sparse matrix is removed
-        return BlocksDiag, BlocksT
+    #    while len(Hams) > 0:
+    #        if Hams[0].shape[0] == 1: #If shape 1, no need for diag
+    #            BlocksDiag.append(Hams[0][0])
+    #            BlocksT.append(np.array(([[1]])))
+    #        else:
+    #            #Convert to dense for diagonalize
+    #            tmp1, tmp2 = np.linalg.eigh(Hams[0].todense())
+    #            BlocksDiag.append(tmp1)
+    #            BlocksT.append(tmp2)
+    #        del Hams[0] #Remove from list. This makes sure that, at any time
+    #        #Only 1 of the Hamiltonians is densely defined, and when diagonalizations took
+    #        #place, the original sparse matrix is removed
+    #    return BlocksDiag, BlocksT
 
     def MakeHshift2(self):
         #Using intelligent method that avoids Kron, only slightly faster then 1D kron
@@ -190,6 +188,71 @@ class spinSystemCls:
                     temp[iii * step: iii * step + step] = -0.5
             HShift += (self.SpinList[spin].shift * 1e-6 + 1) * self.SpinList[spin].Gamma * self.B0 *  temp
         return np.diag(HShift)
+
+    def MakeH2(self):
+        Jmatrix = self.Jmatrix
+        a = time.time()
+        if self.HighOrder:
+            OperatorsFunctions = {'Iz': lambda Spin: Spin.Iz , 'Ix': lambda Spin: Spin.Ix, 'Iy': lambda Spin: Spin.Iy}
+        else:
+            OperatorsFunctions = {'Iz': lambda Spin: Spin.Iz}
+      
+
+        #Make shift
+        HShift = np.zeros(self.MatrixSize)
+        for spin in range(len(self.SpinList)):
+            HShift +=  (self.SpinList[spin].shift * 1e-6 + 1) * self.SpinList[spin].Gamma * self.B0 *  self.MakeSingleIz(spin,self.OperatorsFunctions['Iz'])
+
+        Lines = []
+        Orders = []
+        HJz = np.zeros(self.MatrixSize)
+        for spin in range(len(self.SpinList)):
+            for subspin in range(spin,len(self.SpinList)):
+                    if Jmatrix[spin,subspin] != 0:
+                        HJz += self.MakeMultipleIz(OperatorsFunctions['Iz'],[spin,subspin]) * Jmatrix[spin,subspin]
+
+                        if self.HighOrder:
+                            #tmp = self.MakeMultipleOperator(OperatorsFunctions['Ix'],[spin,subspin]) + self.MakeMultipleOperator(OperatorsFunctions['Iy'],[spin,subspin])
+                            #tmp2  = np.where(tmp > 1e-3)
+                            #order2 = abs(tmp2[1][0] - tmp2[0][0])
+                            #Line2 = np.real(np.diag(tmp,order2))
+                            Val, order = self.MakeDoubleIxy( OperatorsFunctions['Ix'], spin, subspin)
+                            #print('check', np.allclose(Line2,Val))
+                            Orders.append(order)
+                            Lines.append(Val * Jmatrix[spin,subspin])
+                            del Val
+        DiagLine = HShift + HJz
+        print('Get lines' , time.time() - a) 
+        a = time.time()
+        Connect, Jconnect, Jmatrix, JSize = self.get_connections2(Lines,Orders)
+        print('Get connections2' , time.time() - a) 
+
+        Connect = [np.sort(x) for x in Connect] #Sort 
+        print([len(x) for x in Connect])
+
+        BlocksDiag = []
+        BlocksT = []
+        for x in range(len(Connect)):
+            pos = Connect[x]
+            H = np.zeros((len(pos),len(pos)))
+            if len(pos) > 1:
+                Jpos = Jmatrix[Jconnect[x],0:2]
+                Jval = JSize[Jconnect[x]]
+                #Convert Jpos to new system
+                sort_idx = np.argsort(pos)
+                idx = np.searchsorted(pos,Jpos[:,0:2],sorter = sort_idx)
+                to_values = np.arange(len(pos))
+                out = to_values[sort_idx][idx]
+                #Make H
+                H[out[:,1],out[:,0]] = Jval
+                H[out[:,0],out[:,1]] = Jval
+            H[range(len(pos)),range(len(pos))] = DiagLine[pos]
+            #print(H)
+            tmp1, tmp2 = np.linalg.eigh(H)
+            BlocksDiag.append(tmp1)
+            BlocksT.append(tmp2)
+
+        return BlocksDiag, BlocksT, Connect
 
 
     def MakeH(self):
@@ -229,8 +292,9 @@ class spinSystemCls:
 
         #Get block diagonal from Lines/orders
         Connect = self.get_connections(Lines,Orders)
+        Connect = [np.sort(x) for x in Connect]
         print('Get connections' , time.time() - a) 
-       
+              
         #Duplicate -orders
         for index in range(len(Lines)):
             Lines.append(Lines[index])
@@ -242,35 +306,44 @@ class spinSystemCls:
 
 
         #Merge small parts
-        Connect.sort(key=lambda x: len(x))
-        NewList = []
-        tmp = []
-        while len(Connect) != 0:
-            new = list(Connect.pop(0))
-            if len(tmp) + len(new) <= self.BlockSize:
-                tmp = tmp + new
-            else:
-                NewList.append(tmp)
-                tmp = new
-        if len(tmp) != 0:
-            NewList.append(tmp)
-        Connect = NewList
-        print([len(x) for x in Connect])
-        print('Reorder List' , time.time() - a) 
+        #Connect.sort(key=lambda x: len(x))
+        #NewList = []
+        #tmp = []
+        #while len(Connect) != 0:
+        #    new = list(Connect.pop(0))
+        #    if len(tmp) + len(new) <= self.BlockSize:
+        #        tmp = tmp + new
+        #    else:
+        #        NewList.append(tmp)
+        #        tmp = new
+        #if len(tmp) != 0:
+        #    NewList.append(tmp)
+        #Connect = NewList
+        #print('Reorder List' , time.time() - a) 
 
         #Make block diag Hamiltonians
-        Hams = []
+        BlocksDiag = []
+        BlocksT = []
+        HtotAbc = []
         for Blk in Connect:
             if len(Blk) == 1: #Only take diagonal (which is the shift)
                 #Indexing from sparse Htot takes relatively long
-                Hams.append(np.array([HShift[Blk] + HJz[Blk]]))
+                tmp = np.array([HShift[Blk] + HJz[Blk]])
+                HtotAbc.append(tmp)
+                BlocksDiag.append(tmp[0])
+                BlocksT.append(np.array(([[1]])))
             else:
                 tmp = Htot.tocsc()[:,Blk]
                 tmp = tmp.tocsr()[Blk,:]
-                Hams.append(tmp)
-
-        print('Make block' , time.time() - a) 
-        return Hams, Connect
+                H = tmp.todense()
+                HtotAbc.append(H)
+                #print(H)
+                tmp1, tmp2 = np.linalg.eigh(H)
+                BlocksDiag.append(tmp1)
+                BlocksT.append(tmp2)
+         
+        print('Make block diag Ham' , time.time() - a) 
+        return BlocksDiag, BlocksT, Connect, HtotAbc
 
     def bfs(self,Adj, start):
         # Use breadth first search (BFS) for find connected elements
@@ -315,6 +388,45 @@ class spinSystemCls:
                 Connect.append(list(c))
         return Connect
 
+    def get_connections2(self,Lines,Orders):
+        Length = self.MatrixSize
+        First = True
+        List2 = np.array([],dtype = int)
+        JSizeList =  np.array([])
+        for elem in range(len(Lines)):
+            tmp = np.where(Lines[elem] > 0)[0]
+            tmp2 = np.zeros((len(tmp),3),dtype=int)
+            tmp2[:,0] = tmp
+            tmp2[:,1] = tmp + Orders[elem]
+            JSizeList = np.append(JSizeList, Lines[elem][tmp])
+            if First:
+                List2 = tmp2
+                First = False
+            else:
+                List2 = np.append(List2,tmp2,0)
+        Adj = [set([x]) for x in range(Length)]
+        Jpos = [set() for x in range(Length)]
+        for x in range(len(List2)):
+            Adj[List2[x][0]].add(List2[x][1])
+            Adj[List2[x][1]].add(List2[x][0])
+            Jpos[List2[x][0]].add(x) #add index of the added J-coupling
+
+        seen = set()
+        Connect = []
+        for v in range(len(Adj)):
+            if v not in seen:
+                c = set(self.bfs(Adj, v))
+                seen.update(c)
+                Connect.append(list(c))
+
+        Jconnect = []
+        for x in Connect:
+            tmp = set()
+            for pos in x:
+                tmp = tmp | Jpos[pos]
+            Jconnect.append(list(tmp))
+
+        return Connect, Jconnect, List2, JSizeList
 
     def MakeDoubleIxy(self, Ix, spin, subspin):
         #Function to create IxSx + IySy for any system
