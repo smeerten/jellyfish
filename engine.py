@@ -100,96 +100,90 @@ class spinSystemCls:
     def GetFreqInt(self):
 
         #a = time.time()
-        #BlocksDiag, BlocksT, List, Htot = self.MakeH()
-
-        #print('HamTime',time.time() -a)
         a = time.time()
-        BlocksDiag, BlocksT, List = self.MakeH2()
+        BlocksDiag, BlocksT, List = self.MakeH()
         print('HamTime',time.time() -a)
         a = time.time()
 
-        Detect, RhoZero = self.MakeDetectRho()
-        if Detect is None: #If no detect, return empty lists
-            return [],[]
+        a = time.time()
+        Detect, RhoZero, Pos1, Pos2 = self.MakeDetectRho()
         print('Make detect zero',time.time() -a)
         a = time.time()
-
-        Inten, Freq = self.findFreqInt(List, RhoZero, Detect, BlocksT, BlocksDiag)
-        print('Get int',time.time() -a)
+        Inten, Freq = self.findFreqInt(List, RhoZero, Detect, Pos1, Pos2, BlocksT, BlocksDiag)
+        print('GetInt',time.time() -a)
 
         return Inten, Freq
 
-    def findFreqInt(self,List, RhoZero, Detect, BlocksT, BlocksDiag):
+    def findFreqInt(self,List, RhoZero, Detect, Pos1, Pos2, BlocksT, BlocksDiag):
         Inten = []
         Freq = []
 
-        b = 0
-        c = 0
-        d = 0
         for index in range(len(List)):
-            b = b - time.time()
-            tmpZero2 = RhoZero.tocsr()[List[index],:]
-            tmpDetect2 = Detect.tocsr()[List[index],:]
-            b = b + time.time()
+            Rows = List[index]
+            RowPos = np.in1d(Pos1, Rows)
+            RowNeed = np.where(RowPos)[0] #The elements where relevant row indices are
+            Pos1tmp = Pos1[RowNeed]
+            Pos2tmp = Pos2[RowNeed]
+            RhoZeroTmp = RhoZero[RowNeed]
+            DetectTmp = Detect[RowNeed]
+            if len(RowNeed) == 0:
+                continue
             for index2 in range(len(List)):
+                #Make RhoZero and Detect for this element
+                Cols = List[index2]
+                ColPos = np.in1d(Pos2tmp, Cols)
+                Needed = np.where(ColPos)[0]
+                ColNeed = Pos2tmp[Needed]
+                RowNeed = Pos1tmp[Needed]
+                RhoElem = RhoZeroTmp[Needed]
+                DetectElem = DetectTmp[Needed]
+                if len(Needed) == 0:
+                    continue
 
-                b = b - time.time()
-                tmpZero = tmpZero2.tocsc()[:,List[index2]]
-                tmpDetect = tmpDetect2.tocsc()[:,List[index2]]
-                b = b + time.time()
-                if tmpZero.sum() > 1e-9 and  tmpDetect.sum() > 1e-9: #If signal
-                    c = c - time.time()
-                    #Take first dot while sparse: saves time
-                    #Take transpose every time. Takes hardly any time, and prevents double memory for T and inv(T)
-                    BRhoProp2 = np.dot(np.transpose(BlocksT[index]), tmpZero.dot(BlocksT[index2]))
-                    BDetectProp2 = np.dot(np.transpose(BlocksT[index]), tmpDetect.dot(BlocksT[index2]))
-                    BDetectProp2 = np.multiply(BDetectProp2 , BRhoProp2)
-                    c = c + time.time()
-                    Pos = np.where(BDetectProp2 > 1e-9)
-                    tmp = np.array(BDetectProp2[Pos])
-                    Inten = Inten  + list(tmp.flatten())
-                    tmp2 = BlocksDiag[index][Pos[0]] - BlocksDiag[index2][Pos[1]]
-                    Freq= Freq + list(np.abs(tmp2) - np.abs(self.RefFreq))
-                  
-        print('Sparse to dense slice' , b)
-        print('Dot',c)
+                ##Convert to new system
+                sort_idx = np.argsort(Cols)
+                idx = np.searchsorted(Cols,ColNeed,sorter = sort_idx)
+                to_values = np.arange(len(Cols))
+                ColOut = to_values[sort_idx][idx]
+                ##Convert to new system
+                sort_idx = np.argsort(Rows)
+                idx = np.searchsorted(Rows,RowNeed,sorter = sort_idx)
+                to_values = np.arange(len(Rows))
+                RowOut = to_values[sort_idx][idx]
+                #=====
+                DetectMat = np.zeros((len(Rows),len(Cols)))
+                DetectMat[RowOut,ColOut] = DetectElem
+                RhoZeroMat = np.zeros((len(Rows),len(Cols)))
+                RhoZeroMat[RowOut,ColOut] = RhoElem
+
+                RhoZeroMat = np.dot(np.transpose(BlocksT[index]),np.dot(RhoZeroMat,BlocksT[index2]))
+                DetectMat = np.dot(np.transpose(BlocksT[index]),np.dot(DetectMat,BlocksT[index2]))
+
+                DetectMat = np.multiply(DetectMat , RhoZeroMat)
+                Pos = np.where(DetectMat > 1e-9)
+                tmp = np.array(DetectMat[Pos])
+                Inten = Inten  + list(tmp.flatten())
+                tmp2 = BlocksDiag[index][Pos[0]] - BlocksDiag[index2][Pos[1]]
+                Freq= Freq + list(np.abs(tmp2) - np.abs(self.RefFreq))
+
         return Inten, Freq
        
+    #def MakeHshift2(self):
+    #    #Using intelligent method that avoids Kron, only slightly faster then 1D kron
+    #    #Spin 1/2 only atm
+    #    HShift = np.zeros(self.MatrixSize)
+    #    for spin in range(len(self.SpinList)):
+    #        step = int(self.MatrixSize / (2 ** (spin + 1) ))
+    #        temp = np.zeros(self.MatrixSize)
+    #        for iii in range(2 ** (spin + 1)):
+    #            if iii % 2 == 0: #if even
+    #                temp[iii * step: iii * step + step] = 0.5
+    #            else:
+    #                temp[iii * step: iii * step + step] = -0.5
+    #        HShift += (self.SpinList[spin].shift * 1e-6 + 1) * self.SpinList[spin].Gamma * self.B0 *  temp
+    #    return np.diag(HShift)
 
-    #def diagonalizeBlocks(self,Hams):
-    #    BlocksDiag = []
-    #    BlocksT = []
-
-    #    while len(Hams) > 0:
-    #        if Hams[0].shape[0] == 1: #If shape 1, no need for diag
-    #            BlocksDiag.append(Hams[0][0])
-    #            BlocksT.append(np.array(([[1]])))
-    #        else:
-    #            #Convert to dense for diagonalize
-    #            tmp1, tmp2 = np.linalg.eigh(Hams[0].todense())
-    #            BlocksDiag.append(tmp1)
-    #            BlocksT.append(tmp2)
-    #        del Hams[0] #Remove from list. This makes sure that, at any time
-    #        #Only 1 of the Hamiltonians is densely defined, and when diagonalizations took
-    #        #place, the original sparse matrix is removed
-    #    return BlocksDiag, BlocksT
-
-    def MakeHshift2(self):
-        #Using intelligent method that avoids Kron, only slightly faster then 1D kron
-        #Spin 1/2 only atm
-        HShift = np.zeros(self.MatrixSize)
-        for spin in range(len(self.SpinList)):
-            step = int(self.MatrixSize / (2 ** (spin + 1) ))
-            temp = np.zeros(self.MatrixSize)
-            for iii in range(2 ** (spin + 1)):
-                if iii % 2 == 0: #if even
-                    temp[iii * step: iii * step + step] = 0.5
-                else:
-                    temp[iii * step: iii * step + step] = -0.5
-            HShift += (self.SpinList[spin].shift * 1e-6 + 1) * self.SpinList[spin].Gamma * self.B0 *  temp
-        return np.diag(HShift)
-
-    def MakeH2(self):
+    def MakeH(self):
         Jmatrix = self.Jmatrix
         a = time.time()
         if self.HighOrder:
@@ -212,20 +206,15 @@ class spinSystemCls:
                         HJz += self.MakeMultipleIz(OperatorsFunctions['Iz'],[spin,subspin]) * Jmatrix[spin,subspin]
 
                         if self.HighOrder:
-                            #tmp = self.MakeMultipleOperator(OperatorsFunctions['Ix'],[spin,subspin]) + self.MakeMultipleOperator(OperatorsFunctions['Iy'],[spin,subspin])
-                            #tmp2  = np.where(tmp > 1e-3)
-                            #order2 = abs(tmp2[1][0] - tmp2[0][0])
-                            #Line2 = np.real(np.diag(tmp,order2))
                             Val, order = self.MakeDoubleIxy( OperatorsFunctions['Ix'], spin, subspin)
-                            #print('check', np.allclose(Line2,Val))
                             Orders.append(order)
                             Lines.append(Val * Jmatrix[spin,subspin])
                             del Val
         DiagLine = HShift + HJz
         print('Get lines' , time.time() - a) 
         a = time.time()
-        Connect, Jconnect, Jmatrix, JSize = self.get_connections2(Lines,Orders)
-        print('Get connections2' , time.time() - a) 
+        Connect, Jconnect, Jmatrix, JSize = self.get_connections(Lines,Orders)
+        print('Get connections' , time.time() - a) 
 
         Connect = [np.sort(x) for x in Connect] #Sort 
         print([len(x) for x in Connect])
@@ -254,97 +243,6 @@ class spinSystemCls:
 
         return BlocksDiag, BlocksT, Connect
 
-
-    def MakeH(self):
-        Jmatrix = self.Jmatrix
-        a = time.time()
-        if self.HighOrder:
-            OperatorsFunctions = {'Iz': lambda Spin: Spin.Iz , 'Ix': lambda Spin: Spin.Ix, 'Iy': lambda Spin: Spin.Iy}
-        else:
-            OperatorsFunctions = {'Iz': lambda Spin: Spin.Iz}
-      
-
-        #Make shift
-        HShift = np.zeros(self.MatrixSize)
-        for spin in range(len(self.SpinList)):
-            HShift +=  (self.SpinList[spin].shift * 1e-6 + 1) * self.SpinList[spin].Gamma * self.B0 *  self.MakeSingleIz(spin,self.OperatorsFunctions['Iz'])
-
-        Lines = []
-        Orders = []
-        HJz = np.zeros(self.MatrixSize)
-        for spin in range(len(self.SpinList)):
-            for subspin in range(spin,len(self.SpinList)):
-                    if Jmatrix[spin,subspin] != 0:
-                        HJz += self.MakeMultipleIz(OperatorsFunctions['Iz'],[spin,subspin]) * Jmatrix[spin,subspin]
-
-                        if self.HighOrder:
-                            #tmp = self.MakeMultipleOperator(OperatorsFunctions['Ix'],[spin,subspin]) + self.MakeMultipleOperator(OperatorsFunctions['Iy'],[spin,subspin])
-                            #tmp2  = np.where(tmp > 1e-3)
-                            #order2 = abs(tmp2[1][0] - tmp2[0][0])
-                            #Line2 = np.real(np.diag(tmp,order2))
-                            Val, order = self.MakeDoubleIxy( OperatorsFunctions['Ix'], spin, subspin)
-                            #print('check', np.allclose(Line2,Val))
-                            Orders.append(order)
-                            Lines.append(Val * Jmatrix[spin,subspin])
-                            del Val
-
-        print('Get lines' , time.time() - a) 
-
-        #Get block diagonal from Lines/orders
-        Connect = self.get_connections(Lines,Orders)
-        Connect = [np.sort(x) for x in Connect]
-        print('Get connections' , time.time() - a) 
-              
-        #Duplicate -orders
-        for index in range(len(Lines)):
-            Lines.append(Lines[index])
-            Orders.append(-Orders[index])
-        Lines.append(HJz + HShift)
-        Orders.append(0)
-        Htot =  scipy.sparse.diags(Lines, Orders)
-        print('Make Htot' , time.time() - a) 
-
-
-        #Merge small parts
-        #Connect.sort(key=lambda x: len(x))
-        #NewList = []
-        #tmp = []
-        #while len(Connect) != 0:
-        #    new = list(Connect.pop(0))
-        #    if len(tmp) + len(new) <= self.BlockSize:
-        #        tmp = tmp + new
-        #    else:
-        #        NewList.append(tmp)
-        #        tmp = new
-        #if len(tmp) != 0:
-        #    NewList.append(tmp)
-        #Connect = NewList
-        #print('Reorder List' , time.time() - a) 
-
-        #Make block diag Hamiltonians
-        BlocksDiag = []
-        BlocksT = []
-        HtotAbc = []
-        for Blk in Connect:
-            if len(Blk) == 1: #Only take diagonal (which is the shift)
-                #Indexing from sparse Htot takes relatively long
-                tmp = np.array([HShift[Blk] + HJz[Blk]])
-                HtotAbc.append(tmp)
-                BlocksDiag.append(tmp[0])
-                BlocksT.append(np.array(([[1]])))
-            else:
-                tmp = Htot.tocsc()[:,Blk]
-                tmp = tmp.tocsr()[Blk,:]
-                H = tmp.todense()
-                HtotAbc.append(H)
-                #print(H)
-                tmp1, tmp2 = np.linalg.eigh(H)
-                BlocksDiag.append(tmp1)
-                BlocksT.append(tmp2)
-         
-        print('Make block diag Ham' , time.time() - a) 
-        return BlocksDiag, BlocksT, Connect, HtotAbc
-
     def bfs(self,Adj, start):
         # Use breadth first search (BFS) for find connected elements
         seen = set()
@@ -364,37 +262,9 @@ class spinSystemCls:
         Length = self.MatrixSize
         First = True
         List2 = np.array([],dtype = int)
-        for elem in range(len(Lines)):
-            tmp = np.where(Lines[elem] > 0)[0]
-            tmp2 = np.zeros((len(tmp),2),dtype=int)
-            tmp2[:,0] = tmp
-            tmp2[:,1] = tmp + Orders[elem]
-            if First:
-                List2 = tmp2
-                First = False
-            else:
-                List2 = np.append(List2,tmp2,0)
-        Adj = [set([x]) for x in range(Length)]
-        for x in List2:
-            Adj[x[0]].add(x[1])
-            Adj[x[1]].add(x[0])
-
-        seen = set()
-        Connect = []
-        for v in range(len(Adj)):
-            if v not in seen:
-                c = set(self.bfs(Adj, v))
-                seen.update(c)
-                Connect.append(list(c))
-        return Connect
-
-    def get_connections2(self,Lines,Orders):
-        Length = self.MatrixSize
-        First = True
-        List2 = np.array([],dtype = int)
         JSizeList =  np.array([])
         for elem in range(len(Lines)):
-            tmp = np.where(Lines[elem] > 0)[0]
+            tmp = np.where(Lines[elem] != 0.0)[0]
             tmp2 = np.zeros((len(tmp),3),dtype=int)
             tmp2[:,0] = tmp
             tmp2[:,1] = tmp + Orders[elem]
@@ -472,27 +342,30 @@ class spinSystemCls:
         return Val, order
 
     def MakeDetectRho(self):
-        Lines = []
+        Lines = np.array([])
         Orders = []
         DetSelect = []
+        Pos1 = np.array([])
+        Pos2 = np.array([])
         for spin in range(len(self.SpinList)):
             #Make single spin operator when needed. Only Ix needs to be saved temporarily, as it is used twice 
 
-            Line, Pos =  self.MakeSingleIxy(spin,self.OperatorsFunctions['Ix'],'Ix')
-            Lines.append(Line)
-            Orders.append(Pos)
-            if self.SpinList[spin].Detect: #Add to detection
-                DetSelect.append(spin)
+            Line, Order =  self.MakeSingleIxy(spin,self.OperatorsFunctions['Ix'],'Ix')
+            Lines = np.append(Lines,Line)
+            Pos1 = np.append(Pos1,np.arange(len(Line)))
+            Pos2 = np.append(Pos2,np.arange(len(Line)) + Order)
+            #if self.SpinList[spin].Detect: #Add to detection
+            #    DetSelect.append(spin)
 
-        if len(Lines) == 0 or len(DetSelect) == 0:
-            Detect = None
-            RhoZero = None
-        else:
-            Detect =  scipy.sparse.diags([Lines[x] for x in DetSelect], [Orders[x] for x in DetSelect]) * 2 #Iplus = 2 * Ix (above triangular)
-            RhoZero = scipy.sparse.diags(Lines, Orders) / self.MatrixSize # Scale with Partition Function of boltzmann equation
-            #Should RhoZero have lower diag also? Detect has no intensity there, so should not matter...
+        #Filter for zero elements
+        UsedElem = np.where(Lines != 0.0)
+        Lines = Lines[UsedElem]
+        Pos1 = Pos1[UsedElem]
+        Pos2 = Pos2[UsedElem]
+        Detect = 2 * Lines #Factor 2 because 2 * Ix
+        RhoZero = Lines / self.MatrixSize # Scale with Partition Function of boltzmann equation
 
-        return Detect, RhoZero 
+        return Detect, RhoZero, Pos1, Pos2 
 
     def MakeSingleIz(self,spin,Operator):
         #Optimized for Iz: 1D kron only
