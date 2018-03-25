@@ -55,34 +55,22 @@ for i in range(N):
         freqRatioList[i] = isoN[8]
 
 class spinCls:
-    def __init__(self, Nucleus, shift, Detect, multi = 1):
+    def __init__(self, Nucleus, shift, Detect, multi = 1, Ioverwrite = None):
         self.index = ABBREVLIST.index(Nucleus)
-        self.I = spinList[self.index]
+        if Ioverwrite is not None:
+            self.I = Ioverwrite
+        else:
+            self.I = spinList[self.index]
         self.Gamma = freqRatioList[self.index] * GAMMASCALE * 1e6
         self.shift = shift
         self.Detect = Detect
-        if self.I == 0.5 and multi >1:
-            if multi == 2:
-                self.I = 1.5
-                self.Iz = np.diag([1,0,-1,0])
-                self.Ix = np.diag([0.5 * np.sqrt(2), 0.5 * np.sqrt(2),0],1) + np.diag([0.5 * np.sqrt(2), 0.5 * np.sqrt(2),0],-1)
-                self.Iy = np.diag([ - 0.5j * np.sqrt(2), - 0.5j * np.sqrt(2),0],1) + np.diag([0.5j * np.sqrt(2), 0.5j * np.sqrt(2),0],-1)
-                self.Ident = np.eye(int(self.I*2+1))
-            if multi == 3:
-                self.I = 3.5
-                self.Iz = np.diag([1.5,0.5,-0.5,-1.5,0.5,-0.5,0.5,-0.5])
-                self.Ix = np.diag([0.5 * np.sqrt(3), 1, 0.5 * np.sqrt(3),0,0.5,0,0.5],1)
-                self.Ident = np.eye(int(self.I*2+1))
-
-            pass
-        else:
-            self.m = np.linspace(self.I,-self.I,self.I*2+1)
-            self.Iz = np.diag(self.m)
-            self.Iplus = np.diag(np.sqrt(self.I*(self.I+1)-self.m*(self.m+1))[1:],1)
-            self.Imin = np.diag(np.diag(self.Iplus,1),-1)
-            self.Ix = 0.5 * (self.Iplus + self.Imin)
-            self.Iy = -0.5j * (self.Iplus - self.Imin)
-            self.Ident = np.eye(int(self.I*2+1))
+        self.m = np.linspace(self.I,-self.I,self.I*2+1)
+        self.Iz = np.diag(self.m)
+        self.Iplus = np.diag(np.sqrt(self.I*(self.I+1)-self.m*(self.m+1))[1:],1)
+        self.Imin = np.diag(np.diag(self.Iplus,1),-1)
+        self.Ix = 0.5 * (self.Iplus + self.Imin)
+        self.Iy = -0.5j * (self.Iplus - self.Imin)
+        self.Ident = np.eye(int(self.I*2+1))
 
 class spinSystemCls:
     def __init__(self, SpinList, Jmatrix, B0, RefFreq, HighOrder = True, BlockSize = 500):
@@ -99,13 +87,11 @@ class spinSystemCls:
 
     def GetFreqInt(self):
 
-        #a = time.time()
         a = time.time()
         BlocksDiag, BlocksT, List = self.MakeH()
         print('HamTime',time.time() -a)
         a = time.time()
 
-        a = time.time()
         Detect, RhoZero, Pos1, Pos2 = self.MakeDetectRho()
         print('Make detect zero',time.time() -a)
         a = time.time()
@@ -211,13 +197,13 @@ class spinSystemCls:
                             Lines.append(Val * Jmatrix[spin,subspin])
                             del Val
         DiagLine = HShift + HJz
-        print('Get lines' , time.time() - a) 
-        a = time.time()
+        #print('Get lines' , time.time() - a) 
+        #a = time.time()
         Connect, Jconnect, Jmatrix, JSize = self.get_connections(Lines,Orders)
-        print('Get connections' , time.time() - a) 
+        #print('Get connections' , time.time() - a) 
 
         Connect = [np.sort(x) for x in Connect] #Sort 
-        print([len(x) for x in Connect])
+        #print([len(x) for x in Connect])
 
         BlocksDiag = []
         BlocksT = []
@@ -321,7 +307,13 @@ class spinSystemCls:
 
         I1x = np.diag(Ix(self.SpinList[spin]),1)
         I2x = np.diag(Ix(self.SpinList[subspin]),1)
-        Base = 2 *np.kron(I1x,I2x) #2 times, as IxSx + IySy is equal to 2 * IxSx (for the 'upper'
+        if len(I1x) == 0: #Protect against empty Inx (this happens for a I = 0 subspin)
+            Base = 2 *I2x 
+        elif len(I2x) == 0:
+            Base = 2 *I1x 
+        else:
+            Base = 2 *np.kron(I1x,I2x) #2 times, as IxSx + IySy is equal to 2 * IxSx (for the 'upper'
+
         #diagonal)
 
         #This part is the black magic. Essentially, it does the same as 2D kron, but makes use of the
@@ -363,7 +355,7 @@ class spinSystemCls:
         Pos1 = Pos1[UsedElem]
         Pos2 = Pos2[UsedElem]
         Detect = 2 * Lines #Factor 2 because 2 * Ix
-        RhoZero = Lines / self.MatrixSize # Scale with Partition Function of boltzmann equation
+        RhoZero = Lines  
 
         return Detect, RhoZero, Pos1, Pos2 
 
@@ -457,15 +449,23 @@ def expandSpinsys(SpinList,Jmatrix):
     fullSpinList = []
     fullSpinListIndex = []
     for Spin in range(NSpins):
+        spinsTemp = []
         multi = SpinList[Spin][2]
         if SpinList[Spin][0] == '1H' and multi < 4 and multi > 1:
-            spinTemp = spinCls(SpinList[Spin][0],SpinList[Spin][1],SpinList[Spin][3],multi)
-            fullSpinList.append(spinTemp)
+            if multi == 2:
+                spinsTemp.append(spinCls(SpinList[Spin][0],SpinList[Spin][1],SpinList[Spin][3],1,Ioverwrite = 1))
+                spinsTemp.append(spinCls(SpinList[Spin][0],SpinList[Spin][1],SpinList[Spin][3],1,Ioverwrite = 0))
+            if multi == 3:
+                spinsTemp.append(spinCls(SpinList[Spin][0],SpinList[Spin][1],SpinList[Spin][3],1,Ioverwrite = 1.5))
+                spinsTemp.append(spinCls(SpinList[Spin][0],SpinList[Spin][1],SpinList[Spin][3],1,Ioverwrite = 0.5))
+                spinsTemp.append(spinCls(SpinList[Spin][0],SpinList[Spin][1],SpinList[Spin][3],1,Ioverwrite = 0.5))
+
+            fullSpinList.append(spinsTemp)
             fullSpinListIndex.append(Spin)
         else:
             spinTemp = spinCls(SpinList[Spin][0],SpinList[Spin][1],SpinList[Spin][3])
             for iii in range(multi):
-                fullSpinList.append(spinTemp)
+                fullSpinList.append([spinTemp])
                 fullSpinListIndex.append(Spin)
     totalSpins = len(fullSpinListIndex)    
     FullJmatrix = np.zeros((totalSpins,totalSpins))    
@@ -476,5 +476,22 @@ def expandSpinsys(SpinList,Jmatrix):
     #------------------    
     if FullJmatrix is None:
         FullJmatrix = np.zeros(totalSpins,totalSpins)
-    return fullSpinList, FullJmatrix
+
+
+    #Now, we must make a list of the spinsystems, split for each occurance
+    spinsys = [[x] for x in fullSpinList[0]]
+    for group in fullSpinList[1:]:
+        full = []
+        for part in spinsys:
+            tmp = []
+            for elem in group:
+                new = part + [elem]
+                tmp.append(new)
+            full = full + tmp
+        spinsys = full
+
+    #MUST MUST ALSO SCALE WITH THE FULL MATRIXSIZE, BOLTZMANN PARTITION
+
+
+    return spinsys, FullJmatrix
 

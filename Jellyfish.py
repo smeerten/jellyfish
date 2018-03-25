@@ -666,7 +666,8 @@ class MainProgram(QtWidgets.QMainWindow):
         self.Jmatrix = None
         self.StrongCoupling = True
         self.SpinList = []
-        self.SpinSys = None
+        self.Int = []
+        self.Freq = []
         self.Jmatrix = np.zeros((len(self.SpinList),len(self.SpinList)))
         self.PlotFrame = PlotFrame(self, self.fig, self.canvas)
         self.settingsFrame = SettingsFrame(self)
@@ -709,9 +710,13 @@ class MainProgram(QtWidgets.QMainWindow):
         if len(self.SpinList) > 0:
             if recalc:
                 fullSpinList, FullJmatrix = en.expandSpinsys(self.SpinList,self.Jmatrix)
-                self.SpinSys = en.spinSystemCls(fullSpinList, FullJmatrix, self.B0,self.RefFreq, self.StrongCoupling)
-                #self.Intensities, self.Frequencies  = GetFreqInt(SpinSystem,self.RefFreq)
-            self.Spectrum, self.Axis, self.RefFreq = en.MakeSpectrum(self.SpinSys.Int, self.SpinSys.Freq, self.Limits, self.RefFreq, self.Lb, self.NumPoints)
+                self.Freq = []
+                self.Int = []
+                for systm in fullSpinList:
+                    SpinSys = en.spinSystemCls(systm, FullJmatrix, self.B0,self.RefFreq, self.StrongCoupling)
+                    self.Freq = self.Freq + SpinSys.Freq
+                    self.Int = self.Int + SpinSys.Int
+            self.Spectrum, self.Axis, self.RefFreq = en.MakeSpectrum(self.Int, self.Freq, self.Limits, self.RefFreq, self.Lb, self.NumPoints)
         else:
             self.Axis = self.Limits
             self.Spectrum = np.array([0,0])
