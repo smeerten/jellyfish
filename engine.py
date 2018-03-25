@@ -89,14 +89,14 @@ class spinSystemCls:
 
         a = time.time()
         BlocksDiag, BlocksT, List = self.MakeH()
-        print('HamTime',time.time() -a)
+        #print('HamTime',time.time() -a)
         a = time.time()
 
         Detect, RhoZero, Pos1, Pos2 = self.MakeDetectRho()
-        print('Make detect zero',time.time() -a)
+        #print('Make detect zero',time.time() -a)
         a = time.time()
         Inten, Freq = self.findFreqInt(List, RhoZero, Detect, Pos1, Pos2, BlocksT, BlocksDiag)
-        print('GetInt',time.time() -a)
+        #print('GetInt',time.time() -a)
 
         return Inten, Freq
 
@@ -152,7 +152,7 @@ class spinSystemCls:
                 tmp2 = BlocksDiag[index][Pos[0]] - BlocksDiag[index2][Pos[1]]
                 Freq= Freq + list(np.abs(tmp2) - np.abs(self.RefFreq))
 
-        return Inten, Freq
+        return np.array(Inten), np.array(Freq)
        
     #def MakeHshift2(self):
     #    #Using intelligent method that avoids Kron, only slightly faster then 1D kron
@@ -448,25 +448,32 @@ def expandSpinsys(SpinList,Jmatrix):
     NSpins = len(SpinList)
     fullSpinList = []
     fullSpinListIndex = []
+    intenScale = []
     for Spin in range(NSpins):
         spinsTemp = []
+        intens = []
         multi = SpinList[Spin][2]
         if SpinList[Spin][0] == '1H' and multi < 4 and multi > 1:
             if multi == 2:
-                spinsTemp.append(spinCls(SpinList[Spin][0],SpinList[Spin][1],SpinList[Spin][3],1,Ioverwrite = 1))
-                spinsTemp.append(spinCls(SpinList[Spin][0],SpinList[Spin][1],SpinList[Spin][3],1,Ioverwrite = 0))
+                spinsTemp.append(spinCls(SpinList[Spin][0],SpinList[Spin][1],SpinList[Spin][3],Ioverwrite = 1))
+                spinsTemp.append(spinCls(SpinList[Spin][0],SpinList[Spin][1],SpinList[Spin][3],Ioverwrite = 0))
+                intens.append(1)
+                intens.append(1)
             if multi == 3:
-                spinsTemp.append(spinCls(SpinList[Spin][0],SpinList[Spin][1],SpinList[Spin][3],1,Ioverwrite = 1.5))
-                spinsTemp.append(spinCls(SpinList[Spin][0],SpinList[Spin][1],SpinList[Spin][3],1,Ioverwrite = 0.5))
-                spinsTemp.append(spinCls(SpinList[Spin][0],SpinList[Spin][1],SpinList[Spin][3],1,Ioverwrite = 0.5))
+                spinsTemp.append(spinCls(SpinList[Spin][0],SpinList[Spin][1],SpinList[Spin][3],Ioverwrite = 1.5))
+                intens.append(1)
+                spinsTemp.append(spinCls(SpinList[Spin][0],SpinList[Spin][1],SpinList[Spin][3],Ioverwrite = 0.5))
+                intens.append(2)
 
             fullSpinList.append(spinsTemp)
             fullSpinListIndex.append(Spin)
+            intenScale.append(intens)
         else:
             spinTemp = spinCls(SpinList[Spin][0],SpinList[Spin][1],SpinList[Spin][3])
             for iii in range(multi):
                 fullSpinList.append([spinTemp])
                 fullSpinListIndex.append(Spin)
+                intenScale.append([1])
     totalSpins = len(fullSpinListIndex)    
     FullJmatrix = np.zeros((totalSpins,totalSpins))    
     for Spin in range(totalSpins):
@@ -490,8 +497,21 @@ def expandSpinsys(SpinList,Jmatrix):
             full = full + tmp
         spinsys = full
 
+    #Now, we must make a list of relative intensities of each part
+    scaling = [[x] for x in intenScale[0]]
+    for group in intenScale[1:]:
+        full = []
+        for part in scaling:
+            tmp = []
+            for elem in group:
+                new = part + [elem]
+                tmp.append(new)
+            full = full + tmp
+        scaling = full
+    scaling = [np.cumprod(x)[-1] for x in scaling]
     #MUST MUST ALSO SCALE WITH THE FULL MATRIXSIZE, BOLTZMANN PARTITION
 
 
-    return spinsys, FullJmatrix
+
+    return spinsys, FullJmatrix, scaling
 
