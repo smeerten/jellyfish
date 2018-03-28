@@ -710,12 +710,7 @@ class MainProgram(QtWidgets.QMainWindow):
         if len(self.SpinList) > 0:
             if recalc:
                 fullSpinList, FullJmatrix, Scaling = en.expandSpinsys(self.SpinList,self.Jmatrix)
-                self.Freq = np.array([])
-                self.Int = np.array([])
-                for pos in range(len(fullSpinList)):
-                    SpinSys = en.spinSystemCls(fullSpinList[pos], FullJmatrix, self.B0,self.RefFreq, self.StrongCoupling)
-                    self.Freq = np.append(self.Freq, SpinSys.Freq)
-                    self.Int = np.append(self.Int, SpinSys.Int * Scaling[pos])
+                self.Freq, self.Int = en.getFreqInt(fullSpinList, FullJmatrix, Scaling, self.B0, self.RefFreq, self.StrongCoupling)
             self.Spectrum, self.Axis, self.RefFreq = en.MakeSpectrum(self.Int, self.Freq, self.Limits, self.RefFreq, self.Lb, self.NumPoints)
         else:
             self.Axis = self.Limits

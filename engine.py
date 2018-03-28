@@ -534,3 +534,15 @@ def expandSpinsys(SpinList,Jmatrix):
 
     return spinsys, FullJmatrix, scaling
 
+
+
+def getFreqInt(spinList, FullJmatrix, scaling, B0, RefFreq, StrongCoupling = True):
+    Freq = np.array([])
+    Int = np.array([])
+    for pos in range(len(spinList)):
+       SpinSys = spinSystemCls(spinList[pos], FullJmatrix, B0, RefFreq, StrongCoupling)
+       Freq = np.append(Freq, SpinSys.Freq)
+       Int = np.append(Int, SpinSys.Int * scaling[pos])
+    return Freq, Int
+
+
