@@ -452,6 +452,24 @@ def getFullSize(SpinList):
         Size *= ((2 * I) + 1) ** Spin[2] #Power of multiplicity
     return Size
 
+def calcCPM(I,N):
+    Kernel = np.ones((int(2*I+1)))
+
+    Pattern = [1]
+    for i in range(N):
+        Pattern = np.convolve(Pattern,Kernel)
+
+    intense = Pattern[:int((len(Pattern) + 1)/2)] #Take first half, and include centre if len is odd
+    factors = np.append(intense[0],np.diff(intense)) #Take the diff, and prepend the first point
+    if np.mod(len(Pattern),2) == 0: #Even
+        Ieff = np.arange(len(factors) - 0.5,0,-1)
+    else: #Odd
+        Ieff = np.arange(len(factors) - 1,-0.1,-1)
+    #Filter for non-zero elements
+    take = np.where(factors != 0.0)[0]
+    Scale = factors[take]
+    Ieff = Ieff[take]
+    return Ieff, Scale
 
 def expandSpinsys(SpinList,Jmatrix):
     NSpins = len(SpinList)
@@ -461,28 +479,19 @@ def expandSpinsys(SpinList,Jmatrix):
     for Spin in range(NSpins):
         spinsTemp = []
         intens = []
+        index = ABBREVLIST.index(SpinList[Spin][0])
         multi = SpinList[Spin][2]
-        if SpinList[Spin][0] == '1H' and multi < 4 and multi > 1:
-            if multi == 2:
-                spinsTemp.append(spinCls(SpinList[Spin][0],SpinList[Spin][1],SpinList[Spin][3],Ioverwrite = 1))
-                spinsTemp.append(spinCls(SpinList[Spin][0],SpinList[Spin][1],SpinList[Spin][3],Ioverwrite = 0))
-                intens.append(1)
-                intens.append(1)
-            if multi == 3:
-                spinsTemp.append(spinCls(SpinList[Spin][0],SpinList[Spin][1],SpinList[Spin][3],Ioverwrite = 1.5))
-                intens.append(1)
-                spinsTemp.append(spinCls(SpinList[Spin][0],SpinList[Spin][1],SpinList[Spin][3],Ioverwrite = 0.5))
-                intens.append(2)
+        I = spinList[index]
 
-            fullSpinList.append(spinsTemp)
-            fullSpinListIndex.append(Spin)
-            intenScale.append(intens)
-        else:
-            spinTemp = spinCls(SpinList[Spin][0],SpinList[Spin][1],SpinList[Spin][3])
-            for iii in range(multi):
-                fullSpinList.append([spinTemp])
-                fullSpinListIndex.append(Spin)
-                intenScale.append([1])
+        Ieff, Scale = calcCPM(I,multi)
+        for pos in range(len(Ieff)):
+            spinsTemp.append(spinCls(SpinList[Spin][0],SpinList[Spin][1],SpinList[Spin][3],Ioverwrite = Ieff[pos]))
+            intens.append(Scale[pos])
+
+        fullSpinList.append(spinsTemp)
+        fullSpinListIndex.append(Spin)
+        intenScale.append(intens)
+
     totalSpins = len(fullSpinListIndex)    
     FullJmatrix = np.zeros((totalSpins,totalSpins))    
     for Spin in range(totalSpins):
