@@ -443,6 +443,15 @@ def MakeSpectrum(Intensities, Frequencies, AxisLimits, RefFreq,LineBroadening,Nu
     Axis = (Axis[1:] + 0.5 * (Axis[0] - Axis[1]))  / (RefFreq * 1e-6)
     return Spectrum * NumPoints, Axis, RefFreq
 
+def getFullSize(SpinList):
+    #Get full matrix size
+    Size = 1
+    for Spin in SpinList:
+        index = ABBREVLIST.index(Spin[0])
+        I = spinList[index]
+        Size *= ((2 * I) + 1) ** Spin[2] #Power of multiplicity
+    return Size
+
 
 def expandSpinsys(SpinList,Jmatrix):
     NSpins = len(SpinList)
@@ -508,10 +517,11 @@ def expandSpinsys(SpinList,Jmatrix):
                 tmp.append(new)
             full = full + tmp
         scaling = full
-    scaling = [np.cumprod(x)[-1] for x in scaling]
-    #MUST MUST ALSO SCALE WITH THE FULL MATRIXSIZE, BOLTZMANN PARTITION
+    scaling = np.array([np.cumprod(x)[-1] for x in scaling])
 
-
+    #Scale with full matrix size (Boltzmann partition function)
+    Size = getFullSize(SpinList)
+    scaling = np.array(scaling) / Size
 
     return spinsys, FullJmatrix, scaling
 
