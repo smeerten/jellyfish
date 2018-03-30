@@ -22,6 +22,7 @@ import numpy as np
 import time
 import scipy.sparse
 import scipy.signal
+from numba import jit
 
 
 GAMMASCALE = 42.577469 / 100
@@ -29,30 +30,18 @@ with open(os.path.dirname(os.path.realpath(__file__)) +"/IsotopeProperties") as 
     isoList = [line.strip().split('\t') for line in isoFile]
 isoList = isoList[1:]
 N = len(isoList)
-#nameList = []
-#fullNameList = []
 ABBREVLIST = []
-atomNumList = np.zeros(N)
-atomMassList = np.zeros(N)
-spinList = np.zeros(N)
-abundanceList = np.zeros(N)
+SPINLIST = np.zeros(N)
 gammaList = np.zeros(N)
-freqRatioList = np.zeros(N)
+FREQRATIOLIST = np.zeros(N)
 
 for i in range(N):
     isoN = isoList[i]
     if isoN[3] != '-' and isoN[4] != '-' and isoN[8] != '-':
-        atomNumList[i] = int(isoN[0])
-#        nameList = np.append(nameList, isoN[1])
-#        fullNameList = np.append(fullNameList, isoN[2])
-        atomMassList[i] = int(isoN[3])
-        ABBREVLIST.append( str(int(atomMassList[i])) + isoN[1])
-        spinList[i] = isoN[4]
-        if isoN[5] == '-':
-            abundanceList[i] = 0
-        else:
-            abundanceList[i] = isoN[5]
-        freqRatioList[i] = isoN[8]
+        atomMass = int(isoN[3])
+        ABBREVLIST.append( str(int(atomMass)) + isoN[1])
+        SPINLIST[i] = isoN[4]
+        FREQRATIOLIST[i] = isoN[8]
 
 class spinCls:
     def __init__(self, Nucleus, shift, Detect, multi = 1, Ioverwrite = None):
@@ -60,8 +49,8 @@ class spinCls:
         if Ioverwrite is not None:
             self.I = Ioverwrite
         else:
-            self.I = spinList[self.index]
-        self.Gamma = freqRatioList[self.index] * GAMMASCALE * 1e6
+            self.I = SPINLIST[self.index]
+        self.Gamma = FREQRATIOLIST[self.index] * GAMMASCALE * 1e6
         self.shift = shift
         self.Detect = Detect
         self.m = np.linspace(self.I,-self.I,self.I*2+1)
@@ -72,31 +61,90 @@ class spinCls:
         self.Iy = -0.5j * (self.Iplus - self.Imin)
         self.Ident = np.eye(int(self.I*2+1))
 
+def bfs(Adj, start):
+    # Use breadth first search (BFS) for find connected elements
+    seen = set()
+    nextlevel = {start}
+    Connect = []
+    while nextlevel:
+        thislevel = nextlevel
+        nextlevel = set()
+        for v in thislevel:
+            if v not in seen:
+                Connect.append(v)
+                seen.add(v)
+                nextlevel.update(Adj[v])
+    return Connect
+
+def get_connections(Lines,Orders,Length):
+    First = True
+    List2 = np.array([],dtype = int)
+    JSizeList =  np.array([])
+    for elem in range(len(Lines)):
+        tmp = np.where(Lines[elem] != 0.0)[0]
+        tmp2 = np.zeros((len(tmp),3),dtype=int)
+        tmp2[:,0] = tmp
+        tmp2[:,1] = tmp + Orders[elem]
+        JSizeList = np.append(JSizeList, Lines[elem][tmp])
+        if First:
+            List2 = tmp2
+            First = False
+        else:
+            List2 = np.append(List2,tmp2,0)
+    Adj = [set([x]) for x in range(Length)]
+    Jpos = [set() for x in range(Length)]
+    for x in range(len(List2)):
+        Adj[List2[x][0]].add(List2[x][1])
+        Adj[List2[x][1]].add(List2[x][0])
+        Jpos[List2[x][0]].add(x) #add index of the added J-coupling
+
+    seen = set()
+    Connect = []
+    for v in range(len(Adj)):
+        if v not in seen:
+            c = set(bfs(Adj, v))
+            seen.update(c)
+            Connect.append(list(c))
+
+    Jconnect = []
+    for x in Connect:
+        tmp = set()
+        for pos in x:
+            tmp = tmp | Jpos[pos]
+        Jconnect.append(list(tmp))
+
+    return Connect, Jconnect, List2, JSizeList
+
+
+HamTime = 0
+IntTime = 0
+DiagTime = 0
+LinesTime = 0
+ConnectTime = 0
+
 class spinSystemCls:
-    def __init__(self, SpinList, Jmatrix, B0, RefFreq, HighOrder = True, BlockSize = 500):
-        self.BlockSize = BlockSize
+    def __init__(self, SpinList, Jmatrix, B0, RefFreq, HighOrder = True):
         self.SpinList = SpinList
         self.Jmatrix = Jmatrix
         self.B0 = B0
         self.RefFreq = RefFreq
         self.HighOrder = HighOrder
         self.GetMatrixSize()
-        self.OperatorsFunctions = {'Iz': lambda Spin: Spin.Iz , 'Ix': lambda Spin: Spin.Ix, 'Iy': lambda Spin: Spin.Iy}
         self.Int, self.Freq = self.GetFreqInt() 
 
-
     def GetFreqInt(self):
+        global HamTime
+        global IntTime
 
         a = time.time()
         BlocksDiag, BlocksT, List = self.MakeH()
-        #print('HamTime',time.time() -a)
-        a = time.time()
+        HamTime += time.time() -a
 
         Detect, RhoZero, Pos1, Pos2 = self.MakeDetectRho()
         #print('Make detect zero',time.time() -a)
         a = time.time()
         Inten, Freq = self.findFreqInt(List, RhoZero, Detect, Pos1, Pos2, BlocksT, BlocksDiag)
-        #print('GetInt',time.time() -a)
+        IntTime += time.time() - a
 
         return Inten, Freq
 
@@ -170,40 +218,22 @@ class spinSystemCls:
     #    return np.diag(HShift)
 
     def MakeH(self):
+        global DiagTime
+        global LinesTime
+        global ConnectTime
         Jmatrix = self.Jmatrix
-        a = time.time()
-        if self.HighOrder:
-            OperatorsFunctions = {'Iz': lambda Spin: Spin.Iz , 'Ix': lambda Spin: Spin.Ix, 'Iy': lambda Spin: Spin.Iy}
-        else:
-            OperatorsFunctions = {'Iz': lambda Spin: Spin.Iz}
-      
 
         #Make shift
-        HShift = np.zeros(self.MatrixSize)
-        for spin in range(len(self.SpinList)):
-            HShift +=  (self.SpinList[spin].shift * 1e-6 + 1) * self.SpinList[spin].Gamma * self.B0 *  self.MakeSingleIz(spin,self.OperatorsFunctions['Iz'])
-
-        Lines = []
-        Orders = []
-        HJz = np.zeros(self.MatrixSize)
-        for spin in range(len(self.SpinList)):
-            for subspin in range(spin,len(self.SpinList)):
-                    if Jmatrix[spin,subspin] != 0:
-                        HJz += self.MakeMultipleIz(OperatorsFunctions['Iz'],[spin,subspin]) * Jmatrix[spin,subspin]
-
-                        if self.HighOrder:
-                            Val, order = self.MakeDoubleIxy( OperatorsFunctions['Ix'], spin, subspin)
-                            Orders.append(order)
-                            Lines.append(Val * Jmatrix[spin,subspin])
-                            del Val
+        HShift = self.MakeShiftH()
+        abc = time.time()
+        #Make J
+        HJz, Lines, Orders = self.MakeJLines(Jmatrix)
         DiagLine = HShift + HJz
-        #print('Get lines' , time.time() - a) 
-        #a = time.time()
-        Connect, Jconnect, Jmatrix, JSize = self.get_connections(Lines,Orders)
-        #print('Get connections' , time.time() - a) 
-
+        LinesTime += time.time() - abc
+        abc = time.time()
+        Connect, Jconnect, Jmatrix, JSize = get_connections(Lines,Orders,self.MatrixSize)
         Connect = [np.sort(x) for x in Connect] #Sort 
-        #print([len(x) for x in Connect])
+        ConnectTime += time.time() - abc
 
         BlocksDiag = []
         BlocksT = []
@@ -222,69 +252,60 @@ class spinSystemCls:
                 H[out[:,1],out[:,0]] = Jval
                 H[out[:,0],out[:,1]] = Jval
             H[range(len(pos)),range(len(pos))] = DiagLine[pos]
-            #print(H)
+            abc = time.time()
             tmp1, tmp2 = np.linalg.eigh(H)
+            DiagTime +=time.time() - abc
             BlocksDiag.append(tmp1)
             BlocksT.append(tmp2)
 
         return BlocksDiag, BlocksT, Connect
 
-    def bfs(self,Adj, start):
-        # Use breadth first search (BFS) for find connected elements
-        seen = set()
-        nextlevel = {start}
-        Connect = []
-        while nextlevel:
-            thislevel = nextlevel
-            nextlevel = set()
-            for v in thislevel:
-                if v not in seen:
-                    Connect.append(v)
-                    seen.add(v)
-                    nextlevel.update(Adj[v])
-        return Connect
+    def MakeShiftH(self):
+        HShift = np.zeros(self.MatrixSize)
+        for spin in range(len(self.SpinList)):
+            HShift +=  (self.SpinList[spin].shift * 1e-6 + 1) * self.SpinList[spin].Gamma * self.B0 *  self.MakeSingleIz(spin)
+        return HShift
 
-    def get_connections(self,Lines,Orders):
-        Length = self.MatrixSize
-        First = True
-        List2 = np.array([],dtype = int)
-        JSizeList =  np.array([])
-        for elem in range(len(Lines)):
-            tmp = np.where(Lines[elem] != 0.0)[0]
-            tmp2 = np.zeros((len(tmp),3),dtype=int)
-            tmp2[:,0] = tmp
-            tmp2[:,1] = tmp + Orders[elem]
-            JSizeList = np.append(JSizeList, Lines[elem][tmp])
-            if First:
-                List2 = tmp2
-                First = False
-            else:
-                List2 = np.append(List2,tmp2,0)
-        Adj = [set([x]) for x in range(Length)]
-        Jpos = [set() for x in range(Length)]
-        for x in range(len(List2)):
-            Adj[List2[x][0]].add(List2[x][1])
-            Adj[List2[x][1]].add(List2[x][0])
-            Jpos[List2[x][0]].add(x) #add index of the added J-coupling
+    def MakeJLines(self,Jmatrix):
+        Lines = []
+        Orders = []
+        HJz = np.zeros(self.MatrixSize)
+        for spin in range(len(self.SpinList)):
+            for subspin in range(spin,len(self.SpinList)):
+                    if Jmatrix[spin,subspin] != 0:
+                        HJz += self.MakeMultipleIz([spin,subspin]) * Jmatrix[spin,subspin]
+                        if self.HighOrder:
+                            Val, order = self.MakeDoubleIxy( spin, subspin)
+                            Orders.append(order)
+                            Lines.append(Val * Jmatrix[spin,subspin])
+                            del Val
+        return HJz, Lines, Orders
 
-        seen = set()
-        Connect = []
-        for v in range(len(Adj)):
-            if v not in seen:
-                c = set(self.bfs(Adj, v))
-                seen.update(c)
-                Connect.append(list(c))
+    def MakeDetectRho(self):
+        Lines = np.array([])
+        Pos1 = np.array([])
+        Pos2 = np.array([])
+        for spin in range(len(self.SpinList)):
+            #Make single spin operator when needed. Only Ix needs to be saved temporarily, as it is used twice 
 
-        Jconnect = []
-        for x in Connect:
-            tmp = set()
-            for pos in x:
-                tmp = tmp | Jpos[pos]
-            Jconnect.append(list(tmp))
+            Line, Order =  self.MakeSingleIxy(spin)
+            Lines = np.append(Lines,Line)
+            Pos1 = np.append(Pos1,np.arange(len(Line)))
+            Pos2 = np.append(Pos2,np.arange(len(Line)) + Order)
+            #if self.SpinList[spin].Detect: #Add to detection
+            #    DetSelect.append(spin)
 
-        return Connect, Jconnect, List2, JSizeList
+        #Filter for zero elements
+        UsedElem = np.where(Lines != 0.0)
+        Lines = Lines[UsedElem]
+        Pos1 = Pos1[UsedElem]
+        Pos2 = Pos2[UsedElem]
+        Detect = 2 * Lines #Factor 2 because 2 * Ix
+        RhoZero = Lines  
 
-    def MakeDoubleIxy(self, Ix, spin, subspin):
+        return Detect, RhoZero, Pos1, Pos2 
+
+    def MakeDoubleIxy(self, spin, subspin):
         #Function to create IxSx + IySy for any system
         #It creates a 1D list with the values, and the order of the diagonal were
         #it should be placed. This is really efficient, as no 2D kron has to be done
@@ -305,8 +326,8 @@ class spinSystemCls:
         for kkk in list[subspin + 1:]:
             afterlength *= int(self.SpinList[kkk].I * 2 + 1)
 
-        I1x = np.diag(Ix(self.SpinList[spin]),1)
-        I2x = np.diag(Ix(self.SpinList[subspin]),1)
+        I1x = np.diag(self.SpinList[spin].Ix,1)
+        I2x = np.diag(self.SpinList[subspin].Ix,1)
         if len(I1x) == 0: #Protect against empty Inx (this happens for a I = 0 subspin)
             Base = 2 *I2x 
         elif len(I2x) == 0:
@@ -333,45 +354,19 @@ class spinSystemCls:
         order = self.MatrixSize - len(Val)
         return Val, order
 
-    def MakeDetectRho(self):
-        Lines = np.array([])
-        Orders = []
-        DetSelect = []
-        Pos1 = np.array([])
-        Pos2 = np.array([])
-        for spin in range(len(self.SpinList)):
-            #Make single spin operator when needed. Only Ix needs to be saved temporarily, as it is used twice 
-
-            Line, Order =  self.MakeSingleIxy(spin,self.OperatorsFunctions['Ix'],'Ix')
-            Lines = np.append(Lines,Line)
-            Pos1 = np.append(Pos1,np.arange(len(Line)))
-            Pos2 = np.append(Pos2,np.arange(len(Line)) + Order)
-            #if self.SpinList[spin].Detect: #Add to detection
-            #    DetSelect.append(spin)
-
-        #Filter for zero elements
-        UsedElem = np.where(Lines != 0.0)
-        Lines = Lines[UsedElem]
-        Pos1 = Pos1[UsedElem]
-        Pos2 = Pos2[UsedElem]
-        Detect = 2 * Lines #Factor 2 because 2 * Ix
-        RhoZero = Lines  
-
-        return Detect, RhoZero, Pos1, Pos2 
-
-    def MakeSingleIz(self,spin,Operator):
+    def MakeSingleIz(self,spin):
         #Optimized for Iz: 1D kron only
         IList = []
         for subspin in range(len(self.SpinList)):
             if spin == subspin:
-                IList.append(np.diag(Operator(self.SpinList[subspin])))
+                IList.append(np.diag(self.SpinList[subspin].Iz))
             else:
                 IList.append(np.diag(self.SpinList[subspin].Ident))
         
         return self.kronList(IList)
 
 
-    def MakeSingleIxy(self,spin,Operator,Type):
+    def MakeSingleIxy(self,spin):
         #Optimized routine to get Ix|Y for a single spin
         #Returned are the values, and the level of the diagonal were it should be positioned
         #Only Iy and Ix can be constructed from this.
@@ -384,28 +379,18 @@ class spinSystemCls:
         for jjj in list[spin + 1:]:
             afterlength *= int(self.SpinList[jjj].I * 2 + 1)
 
-        Op = Operator(self.SpinList[spin])
+        Op = self.SpinList[spin].Ix
         Pre = np.append(np.diag(Op,1),0)
         Pre = np.tile(np.repeat(Pre,afterlength), beforelength)
         Pre = Pre[:-afterlength]
         return Pre, afterlength
 
-    def MakeMultipleOperator(self,Operator,SelectList):
-       IList = []
-       for spin in  range(len(self.SpinList)):
-           if spin in SelectList:
-               IList.append(Operator(self.SpinList[spin]))
-           else:
-               IList.append(self.SpinList[spin].Ident)
-       Matrix = self.kronList(IList)
-       return Matrix
-
-    def MakeMultipleIz(self,Operator,SelectList):
+    def MakeMultipleIz(self,SelectList):
         #1D kron. Reasonably efficient
        IList = []
        for spin in  range(len(self.SpinList)):
            if spin in SelectList:
-               IList.append(np.diag(Operator(self.SpinList[spin])))
+               IList.append(np.diag(self.SpinList[spin].Iz))
            else:
                IList.append(np.diag(self.SpinList[spin].Ident))
        Matrix = self.kronList(IList)
@@ -448,7 +433,7 @@ def getFullSize(SpinList):
     Size = 1
     for Spin in SpinList:
         index = ABBREVLIST.index(Spin[0])
-        I = spinList[index]
+        I = SPINLIST[index]
         Size *= ((2 * I) + 1) ** Spin[2] #Power of multiplicity
     return Size
 
@@ -481,7 +466,7 @@ def expandSpinsys(SpinList,Jmatrix):
         intens = []
         index = ABBREVLIST.index(SpinList[Spin][0])
         multi = SpinList[Spin][2]
-        I = spinList[index]
+        I = SPINLIST[index]
 
         Ieff, Scale = calcCPM(I,multi)
         for pos in range(len(Ieff)):
@@ -543,6 +528,17 @@ def getFreqInt(spinList, FullJmatrix, scaling, B0, RefFreq, StrongCoupling = Tru
        SpinSys = spinSystemCls(spinList[pos], FullJmatrix, B0, RefFreq, StrongCoupling)
        Freq = np.append(Freq, SpinSys.Freq)
        Int = np.append(Int, SpinSys.Int * scaling[pos])
+    global HamTime
+    global IntTime
+    global LinesTime
+    global ConnectTime
+    DiagTime
+    print('HamTime',HamTime)
+    print('---LinesTime',LinesTime)
+    print('---ConnectTime',ConnectTime)
+    print('---DiagTime',DiagTime)
+
+    print('IntTime',IntTime)
     return Freq, Int
 
 
