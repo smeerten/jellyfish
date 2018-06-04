@@ -22,8 +22,11 @@ import numpy as np
 import time
 import scipy.sparse
 import scipy.signal
-from numba import jit
-
+#try: #If numba exists, use jit, otherwise make a mock decorator
+#    from numba import jit
+#except:
+#    def jit(func):
+#        return func
 
 GAMMASCALE = 42.577469 / 100
 with open(os.path.dirname(os.path.realpath(__file__)) +"/IsotopeProperties") as isoFile:
