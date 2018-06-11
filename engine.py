@@ -557,9 +557,10 @@ def saveSimpsonFile(data,sw,location):
                 f.write(str(Line.real) + ' ' + str(Line.imag) + '\n')
             f.write('END')
 
-def saveMatlabFile(data,limits,sw,ref,axis,location):
+def saveMatlabFile(data,limits,ref,axis,location):
     import scipy.io
     freq = (limits[1] - limits[0])/2 * ref * 1e-6 + ref
+    sw = (limits[1] - limits[0]) * ref * 1e-6
     struct = {}
     struct['dim'] = 1
     struct['data'] = data
