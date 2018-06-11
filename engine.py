@@ -410,7 +410,7 @@ class spinSystemCls:
         for spin in self.SpinList:
             self.MatrixSize = int(self.MatrixSize * (spin.I * 2 + 1))
         
-def MakeSpectrum(Intensities, Frequencies, AxisLimits, RefFreq,LineBroadening,NumPoints):
+def MakeSpectrum(Intensities, Frequencies, AxisLimits, RefFreq,LineBroadening,NumPoints, Real = True):
     a = time.time()
     Limits = tuple(AxisLimits * RefFreq * 1e-6)
     sw = Limits[1] - Limits[0]
@@ -427,7 +427,9 @@ def MakeSpectrum(Intensities, Frequencies, AxisLimits, RefFreq,LineBroadening,Nu
        Fid = np.fft.ifft(np.fft.ifftshift(np.conj(scipy.signal.hilbert(Spectrum))))
        TimeAxis = np.linspace(0,NumPoints-1,NumPoints) * dw
        Fid = Fid * np.exp(-TimeAxis * lb)
-       Spectrum = np.real(np.fft.fftshift(np.fft.fft(Fid)))
+       Spectrum = np.fft.fftshift(np.fft.fft(Fid))
+       if Real:
+           Spectrum = np.real(Spectrum)
     Axis = (Axis[1:] + 0.5 * (Axis[0] - Axis[1]))  / (RefFreq * 1e-6)
     return Spectrum * NumPoints, Axis, RefFreq
 
@@ -544,4 +546,31 @@ def getFreqInt(spinList, FullJmatrix, scaling, B0, RefFreq, StrongCoupling = Tru
     print('IntTime',IntTime)
     return Freq, Int
 
+def saveSimpsonFile(data,sw,location):
+        with open(location, 'w') as f:
+            f.write('SIMP\n')
+            f.write('NP=' + str(len(data)) + '\n')
+            f.write('SW=' + str(sw) + '\n')
+            f.write('TYPE=SPE' + '\n')
+            f.write('DATA' + '\n')
+            for Line in data:
+                f.write(str(Line.real) + ' ' + str(Line.imag) + '\n')
+            f.write('END')
 
+def saveMatlabFile(data,limits,sw,ref,axis,location):
+    import scipy.io
+    freq = (limits[1] - limits[0])/2 * ref * 1e-6 + ref
+    struct = {}
+    struct['dim'] = 1
+    struct['data'] = data
+    struct['hyper'] = np.array([])
+    struct['freq'] = freq
+    struct['sw'] = sw
+    struct['spec'] = [True]
+    struct['wholeEcho'] = [False]
+    struct['ref'] = np.array([ref], dtype=np.float)
+    struct['history'] = []
+
+    struct['xaxArray'] = axis * ref * 1e-6
+    matlabStruct = {'Jellyfish': struct}
+    scipy.io.savemat(location, matlabStruct)
