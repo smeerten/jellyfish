@@ -47,7 +47,7 @@ for i in range(N):
         FREQRATIOLIST[i] = isoN[8]
 
 class spinCls:
-    def __init__(self, Nucleus, shift, Detect, multi = 1, Ioverwrite = None):
+    def __init__(self, Nucleus, shift, Detect, Ioverwrite = None):
         self.index = ABBREVLIST.index(Nucleus)
         if Ioverwrite is not None:
             self.I = Ioverwrite
@@ -63,6 +63,7 @@ class spinCls:
         self.Ix = 0.5 * (self.Iplus + self.Imin)
         self.Iy = -0.5j * (self.Iplus - self.Imin)
         self.Ident = np.eye(int(self.I*2+1))
+        self.Length = int(self.I * 2 + 1)
 
 def bfs(Adj, start):
     # Use breadth first search (BFS) for find connected elements
@@ -144,7 +145,6 @@ class spinSystemCls:
         HamTime += time.time() -a
 
         Detect, RhoZero, Pos1, Pos2 = self.MakeDetectRho()
-        #print('Make detect zero',time.time() -a)
         a = time.time()
         Inten, Freq = self.findFreqInt(List, RhoZero, Detect, Pos1, Pos2, BlocksT, BlocksDiag)
         IntTime += time.time() - a
@@ -205,21 +205,6 @@ class spinSystemCls:
 
         return np.array(Inten), np.array(Freq)
        
-    #def MakeHshift2(self):
-    #    #Using intelligent method that avoids Kron, only slightly faster then 1D kron
-    #    #Spin 1/2 only atm
-    #    HShift = np.zeros(self.MatrixSize)
-    #    for spin in range(len(self.SpinList)):
-    #        step = int(self.MatrixSize / (2 ** (spin + 1) ))
-    #        temp = np.zeros(self.MatrixSize)
-    #        for iii in range(2 ** (spin + 1)):
-    #            if iii % 2 == 0: #if even
-    #                temp[iii * step: iii * step + step] = 0.5
-    #            else:
-    #                temp[iii * step: iii * step + step] = -0.5
-    #        HShift += (self.SpinList[spin].shift * 1e-6 + 1) * self.SpinList[spin].Gamma * self.B0 *  temp
-    #    return np.diag(HShift)
-
     def MakeH(self):
         global DiagTime
         global LinesTime
@@ -227,10 +212,11 @@ class spinSystemCls:
         Jmatrix = self.Jmatrix
 
         #Make shift
-        HShift = self.MakeShiftH()
         abc = time.time()
+        HShift, IzList = self.MakeShiftH()
+        self.IzList = IzList
         #Make J
-        HJz, Lines, Orders = self.MakeJLines(Jmatrix)
+        HJz, Lines, Orders = self.MakeJLines(Jmatrix,IzList)
         DiagLine = HShift + HJz
         LinesTime += time.time() - abc
         abc = time.time()
@@ -264,23 +250,33 @@ class spinSystemCls:
         return BlocksDiag, BlocksT, Connect
 
     def MakeShiftH(self):
-        HShift = np.zeros(self.MatrixSize)
-        for spin in range(len(self.SpinList)):
-            HShift +=  (self.SpinList[spin].shift * 1e-6 + 1) * self.SpinList[spin].Gamma * self.B0 *  self.MakeSingleIz(spin)
-        return HShift
+        """ Makes the shift Hamiltonian
+            Also saves the calculated Iz for each spin, for reuse later on (in J Hamiltonian).
+            Output is an array with self.MatrixSize which is the diagonal of the Hshift matrix
+            (only diagonal is populated).
 
-    def MakeJLines(self,Jmatrix):
+        """
+        HShift = np.zeros(self.MatrixSize)
+        IzList = np.zeros((len(self.SpinList),self.MatrixSize))
+        for spin in range(len(self.SpinList)):
+            Iz = self.MakeSingleIz(spin)
+            IzList[spin,:] = Iz
+            HShift +=  (self.SpinList[spin].shift * 1e-6 + 1) * self.SpinList[spin].Gamma * self.B0 * Iz 
+        return HShift, IzList
+
+    def MakeJLines(self,Jmatrix,IzList):
         Lines = []
         Orders = []
         HJz = np.zeros(self.MatrixSize)
         for spin in range(len(self.SpinList)):
             for subspin in range(spin,len(self.SpinList)):
                     if Jmatrix[spin,subspin] != 0:
-                        HJz += self.MakeMultipleIz([spin,subspin]) * Jmatrix[spin,subspin]
+                        HJz += IzList[spin,:] * IzList[subspin,:] * Jmatrix[spin,subspin]
                         if self.HighOrder:
-                            Val, order = self.MakeDoubleIxy( spin, subspin)
-                            Orders.append(order)
-                            Lines.append(Val * Jmatrix[spin,subspin])
+                            Val, order = self.MakeIpSm( spin, subspin,IzList)
+                            if Val is not None:
+                                Orders.append(order)
+                                Lines.append(Val * Jmatrix[spin,subspin])
                             del Val
         return HJz, Lines, Orders
 
@@ -291,7 +287,7 @@ class spinSystemCls:
         for spin in range(len(self.SpinList)):
             #Make single spin operator when needed. Only Ix needs to be saved temporarily, as it is used twice 
 
-            Line, Order =  self.MakeSingleIxy(spin)
+            Line, Order =  self.MakeSingleIx(spin)
             Lines = np.append(Lines,Line)
             Pos1 = np.append(Pos1,np.arange(len(Line)))
             Pos2 = np.append(Pos2,np.arange(len(Line)) + Order)
@@ -308,54 +304,51 @@ class spinSystemCls:
 
         return Detect, RhoZero, Pos1, Pos2 
 
-    def MakeDoubleIxy(self, spin, subspin):
-        #Function to create IxSx + IySy for any system
-        #It creates a 1D list with the values, and the order of the diagonal were
-        #it should be placed. This is really efficient, as no 2D kron has to be done
-
-        #Beforelength: cumprod of all identity operators sizes before the first Ix
-        #Middlelength: same, but for all between the two Ix
-        #afterlength: same, but for all after the last Ix
+    def MakeIpSm(self,spin,subspin,IzList):
+        """ Makes 0.5 * Iplus * Sminus line
+            Note that Iplus and Sminus commute, so can be calculated separately
+            spin: the index of I
+            subspin: the index of S
+            Returns the relevant line, and order of the diagonal it needs to be placed.
+        """
         list = [i for i in range(len(self.SpinList))]
-        beforelength = 1
-        for iii in list[0:spin]:
-            beforelength *= int(self.SpinList[iii].I * 2 + 1)
-
+        
         middlelength = 1
         for jjj in list[spin + 1:subspin]:
-            middlelength *= int(self.SpinList[jjj].I * 2 + 1)
+            middlelength *= self.SpinList[jjj].Length
 
         afterlength = 1
         for kkk in list[subspin + 1:]:
-            afterlength *= int(self.SpinList[kkk].I * 2 + 1)
+            afterlength *= self.SpinList[kkk].Length
 
-        I1x = np.diag(self.SpinList[spin].Ix,1)
-        I2x = np.diag(self.SpinList[subspin].Ix,1)
-        if len(I1x) == 0: #Protect against empty Inx (this happens for a I = 0 subspin)
-            Base = 2 *I2x 
-        elif len(I2x) == 0:
-            Base = 2 *I1x 
+        #Magic statement for the position of the line
+        order = (middlelength * self.SpinList[subspin].Length - 1) *  afterlength  
+
+        if order != 0:
+            #Calc Ip and Sm. In principle, these could be saved and reused, but only
+            #a marginal time save < 5 % could be gained this way. Calculation is cheap
+            Iplus = self.GetIpm(spin,True,order)
+            Smin = self.GetIpm(subspin,False,order)
+
+            Line = 0.5 * Iplus * Smin
+
+            return Line, order
+        return None, None
+
+    def GetIpm(self,spin,plus,order=None):
+        I = self.SpinList[spin].I
+        if order is None:
+            Iz = self.IzList[spin,:]
         else:
-            Base = 2 *np.kron(I1x,I2x) #2 times, as IxSx + IySy is equal to 2 * IxSx (for the 'upper'
+            Iz = self.IzList[spin,:][:-order]
+        if plus: #Plus and minus 'sign' to be opposite of normal? 
+                 #Perhaps to do with some shifting that is required...
+                 #This code has been checked, so it functions as it should
+            Ipm = np.sqrt(I * (I +1) - Iz * (Iz - 1))
+        else:
+            Ipm = np.sqrt(I * (I +1) - Iz * (Iz + 1))
+        return Ipm
 
-        #diagonal)
-
-        #This part is the black magic. Essentially, it does the same as 2D kron, but makes use of the
-        #very specific problem we encounter here: Only identity operators or first diagonal only (Ix + Iy) 
-        #are encountered here. The code has been made by reverse engineering, as the large 2D
-        #matrices that result from the regular 2D kron are impossible to visualize...
-        Val = np.array([])
-        for x in range(len(I1x)):
-            tmp = np.tile(np.append(Base[0 + x * len(I2x):len(I2x) * (x+1)],[0]),middlelength)
-            Val = np.append(Val,tmp)
-        Val = np.append(Val,[0] * ( (len(I2x) + 1) * middlelength))
-        Val = np.tile(Val, beforelength)
-        Val = np.repeat(Val,afterlength)
-        Val = np.append([0] * afterlength,Val)
-        Val = Val[0: - (len(I2x) + 1) * afterlength * middlelength]
-
-        order = self.MatrixSize - len(Val)
-        return Val, order
 
     def MakeSingleIz(self,spin):
         #Optimized for Iz: 1D kron only
@@ -368,36 +361,24 @@ class spinSystemCls:
         
         return self.kronList(IList)
 
+    def MakeSingleIx(self,spin):
+        """ Returns Ix and the order of the diagonal were it should be placed
+            Used the fact that Ix = 0.5 * (Iplus + Iminus). As Iminus is in the lower 
+            diagonals, it is not needed. So Ix = 0.5 * Iplus
+            The order of the diagnoal is equal to the total length of the spins that comes
+            after the current spin.
 
-    def MakeSingleIxy(self,spin):
-        #Optimized routine to get Ix|Y for a single spin
-        #Returned are the values, and the level of the diagonal were it should be positioned
-        #Only Iy and Ix can be constructed from this.
+        """
         list = [i for i in range(len(self.SpinList))]
-        beforelength = 1
-        for iii in list[0:spin]:
-            beforelength *= int(self.SpinList[iii].I * 2 + 1)
 
         afterlength = 1
         for jjj in list[spin + 1:]:
-            afterlength *= int(self.SpinList[jjj].I * 2 + 1)
+            afterlength *= self.SpinList[jjj].Length
 
-        Op = self.SpinList[spin].Ix
-        Pre = np.append(np.diag(Op,1),0)
-        Pre = np.tile(np.repeat(Pre,afterlength), beforelength)
-        Pre = Pre[:-afterlength]
-        return Pre, afterlength
+        Ix = 0.5 * self.GetIpm(spin,True,afterlength)
 
-    def MakeMultipleIz(self,SelectList):
-        #1D kron. Reasonably efficient
-       IList = []
-       for spin in  range(len(self.SpinList)):
-           if spin in SelectList:
-               IList.append(np.diag(self.SpinList[spin].Iz))
-           else:
-               IList.append(np.diag(self.SpinList[spin].Ident))
-       Matrix = self.kronList(IList)
-       return Matrix
+        #Afterlength is order of diagonal
+        return Ix, afterlength
 
     def kronList(self,List):
         M = 1
@@ -408,10 +389,9 @@ class spinSystemCls:
     def GetMatrixSize(self):
         self.MatrixSize = 1
         for spin in self.SpinList:
-            self.MatrixSize = int(self.MatrixSize * (spin.I * 2 + 1))
+            self.MatrixSize = int(self.MatrixSize * spin.Length)
         
 def MakeSpectrum(Intensities, Frequencies, AxisLimits, RefFreq,LineBroadening,NumPoints, Real = True):
-    a = time.time()
     Limits = tuple(AxisLimits * RefFreq * 1e-6)
     sw = Limits[1] - Limits[0]
     dw = 1.0/ sw
