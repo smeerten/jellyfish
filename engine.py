@@ -79,12 +79,12 @@ def get_connections(Lines,Orders,Length):
     First = True
     List2 = np.array([],dtype = int)
     JSizeList =  np.array([])
-    for elem in range(len(Lines)):
-        tmp = np.where(Lines[elem] != 0.0)[0]
-        tmp2 = np.zeros((len(tmp),3),dtype=int)
+    for pos, elem in enumerate(Lines):
+        tmp = np.where(elem != 0.0)[0]
+        tmp2 = np.zeros((len(tmp),2),dtype=int)
         tmp2[:,0] = tmp
-        tmp2[:,1] = tmp + Orders[elem]
-        JSizeList = np.append(JSizeList, Lines[elem][tmp])
+        tmp2[:,1] = tmp + Orders[pos]
+        JSizeList = np.append(JSizeList, elem[tmp])
         if First:
             List2 = tmp2
             First = False
@@ -124,6 +124,7 @@ ConnectTime = 0
 class spinSystemCls:
     def __init__(self, SpinList, Jmatrix, B0, RefFreq, HighOrder = True):
         self.SpinList = SpinList
+        self.nSpins = len(self.SpinList)
         self.Jmatrix = Jmatrix
         self.B0 = B0
         self.RefFreq = RefFreq
@@ -134,8 +135,8 @@ class spinSystemCls:
         self.Int, self.Freq = self.GetFreqInt() 
 
     def GetIz(self):
-        IzList = np.zeros((len(self.SpinList),self.MatrixSize))
-        for spin in range(len(self.SpinList)):
+        IzList = np.zeros((self.nSpins,self.MatrixSize))
+        for spin in range(self.nSpins):
             IzList[spin,:] = self.MakeSingleIz(spin)
         return IzList
 
@@ -146,8 +147,8 @@ class spinSystemCls:
            Ix = 0.5 * Iplus)
            Also not that Imin = np.flipud(Iplus). This means that by having Iplus, we have both Ix,Iy,Iplus and Iminus
         """
-        IpList = np.zeros((len(self.SpinList),self.MatrixSize))
-        for spin in range(len(self.SpinList)):
+        IpList = np.zeros((self.nSpins,self.MatrixSize))
+        for spin in range(self.nSpins):
             I = self.SpinList[spin].I
             #The 'sign' appears to be that of the Imin, but answer is correct. Sign inversion leads to
             #very bad results
@@ -227,13 +228,11 @@ class spinSystemCls:
         global DiagTime
         global LinesTime
         global ConnectTime
-        Jmatrix = self.Jmatrix
 
-        #Make shift
+        #Make shift and J
         abc = time.time()
         HShift = self.MakeShiftH()
-        #Make J
-        HJz, Lines, Orders = self.MakeJLines(Jmatrix)
+        HJz, Lines, Orders = self.MakeJLines()
         DiagLine = HShift + HJz
         LinesTime += time.time() - abc
         abc = time.time()
@@ -273,24 +272,23 @@ class spinSystemCls:
 
         """
         HShift = np.zeros(self.MatrixSize)
-        for spin in range(len(self.SpinList)):
+        for spin in range(self.nSpins):
             HShift +=  (self.SpinList[spin].shift * 1e-6 + 1) * self.SpinList[spin].Gamma * self.B0 * self.IzList[spin,:] 
         return HShift
 
-    def MakeJLines(self,Jmatrix):
+    def MakeJLines(self):
         Lines = []
         Orders = []
         HJz = np.zeros(self.MatrixSize)
-        for spin in range(len(self.SpinList)):
-            for subspin in range(spin,len(self.SpinList)):
-                    if Jmatrix[spin,subspin] != 0:
-                        HJz += self.IzList[spin,:] * self.IzList[subspin,:] * Jmatrix[spin,subspin]
+        for spin in range(self.nSpins):
+            for subspin in range(spin,self.nSpins):
+                    if self.Jmatrix[spin,subspin] != 0:
+                        HJz += self.IzList[spin,:] * self.IzList[subspin,:] * self.Jmatrix[spin,subspin]
                         if self.HighOrder:
                             Val, order = self.MakeIpSm( spin, subspin)
                             if Val is not None:
                                 Orders.append(order)
-                                Lines.append(Val * Jmatrix[spin,subspin])
-                            del Val
+                                Lines.append(Val * self.Jmatrix[spin,subspin])
         return HJz, Lines, Orders
 
     def MakeDetectRho(self):
@@ -298,7 +296,7 @@ class spinSystemCls:
         Detect = np.array([])
         Pos1 = np.array([])
         Pos2 = np.array([])
-        for spin in range(len(self.SpinList)):
+        for spin in range(self.nSpins):
             #Make single spin operator when needed. Only Ix needs to be saved temporarily, as it is used twice 
 
             Line, Order =  self.MakeSingleIx(spin)
@@ -327,24 +325,15 @@ class spinSystemCls:
             subspin: the index of S
             Returns the relevant line, and order of the diagonal it needs to be placed.
         """
-        list = [i for i in range(len(self.SpinList))]
-        
-        middlelength = 1
-        for jjj in list[spin + 1:subspin]:
-            middlelength *= self.SpinList[jjj].Length
-
-        afterlength = 1
-        for kkk in list[subspin + 1:]:
-            afterlength *= self.SpinList[kkk].Length
+        middlelength = np.cumprod([1] + [i.Length for i in self.SpinList[spin + 1:subspin]])[-1]
+        afterlength = np.cumprod([1] + [i.Length for i in self.SpinList[subspin + 1:]])[-1]
 
         #Magic statement for the position of the line
         order = (middlelength * self.SpinList[subspin].Length - 1) *  afterlength  
 
         if order != 0:
-            #Calc Ip and Sm. In principle, these could be saved and reused, but only
-            #a marginal time save < 5 % could be gained this way. Calculation is cheap
             Iplus = self.IpList[spin,:][:-order]
-            Smin = np.flipud(self.IpList[subspin,:])[:-order]
+            Smin = np.flipud(self.IpList[subspin,:])[:-order] #Iminus is flipped Iplus
             Line = 0.5 * Iplus * Smin
 
             return Line, order
@@ -353,7 +342,7 @@ class spinSystemCls:
     def MakeSingleIz(self,spin):
         #Optimized for Iz: 1D kron only
         IList = []
-        for subspin in range(len(self.SpinList)):
+        for subspin in range(self.nSpins):
             if spin == subspin:
                 IList.append(self.SpinList[subspin].Iz)
             else:
@@ -369,11 +358,7 @@ class spinSystemCls:
             after the current spin.
 
         """
-        list = [i for i in range(len(self.SpinList))]
-
-        afterlength = 1
-        for jjj in list[spin + 1:]:
-            afterlength *= self.SpinList[jjj].Length
+        afterlength = np.cumprod([1] + [i.Length for i in self.SpinList[spin + 1:]])[-1]
 
         Ix = 0.5 * self.IpList[spin,:][:-afterlength]
 
@@ -387,9 +372,7 @@ class spinSystemCls:
         return M
         
     def GetMatrixSize(self):
-        self.MatrixSize = 1
-        for spin in self.SpinList:
-            self.MatrixSize = int(self.MatrixSize * spin.Length)
+        self.MatrixSize = np.cumprod([1] + [i.Length for i in self.SpinList])[-1]
         
 def MakeSpectrum(Intensities, Frequencies, AxisLimits, RefFreq,LineBroadening,NumPoints, Real = True):
     Limits = tuple(AxisLimits * RefFreq * 1e-6)
@@ -507,6 +490,7 @@ def expandSpinsys(SpinList,Jmatrix):
 
 
 def getFreqInt(spinList, FullJmatrix, scaling, B0, RefFreq, StrongCoupling = True):
+    abc = time.time()
     Freq = np.array([])
     Int = np.array([])
     for pos in range(len(spinList)):
@@ -517,13 +501,14 @@ def getFreqInt(spinList, FullJmatrix, scaling, B0, RefFreq, StrongCoupling = Tru
     global IntTime
     global LinesTime
     global ConnectTime
-    DiagTime
+    global DiagTime
     print('HamTime',HamTime)
     print('---LinesTime',LinesTime)
     print('---ConnectTime',ConnectTime)
     print('---DiagTime',DiagTime)
 
     print('IntTime',IntTime)
+    print('Full',time.time() - abc)
     return Freq, Int
 
 def saveSimpsonFile(data,sw,location):
