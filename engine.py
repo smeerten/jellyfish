@@ -22,11 +22,11 @@ import numpy as np
 import time
 import scipy.sparse
 import scipy.signal
-#try: #If numba exists, use jit, otherwise make a mock decorator
-#    from numba import jit
-#except:
-#    def jit(func):
-#        return func
+try: #If numba exists, use jit, otherwise make a mock decorator
+    from numba import jit
+except:
+    def jit(func):
+        return func
 
 GAMMASCALE = 42.577469 / 100
 with open(os.path.dirname(os.path.realpath(__file__)) +"/IsotopeProperties") as isoFile:
@@ -72,47 +72,70 @@ def bfs(Adj, start):
             if v not in seen:
                 Connect.append(v)
                 seen.add(v)
-                nextlevel.update(Adj[v])
+                nextlevel.update(Adj[v,:])
     return Connect
 
 def get_connections(Lines,Orders,Length):
-    First = True
-    List2 = np.array([],dtype = int)
+    global tmpTime
+    abc = time.time()
     JSizeList =  np.array([])
+    Pos1 = []
+    Pos2 = []
     for pos, elem in enumerate(Lines):
-        tmp = np.where(elem != 0.0)[0]
-        tmp2 = np.zeros((len(tmp),2),dtype=int)
-        tmp2[:,0] = tmp
-        tmp2[:,1] = tmp + Orders[pos]
-        JSizeList = np.append(JSizeList, elem[tmp])
-        if First:
-            List2 = tmp2
-            First = False
-        else:
-            List2 = np.append(List2,tmp2,0)
-    Adj = [set([x]) for x in range(Length)]
-    Jpos = [set() for x in range(Length)]
-    for x in range(len(List2)):
-        Adj[List2[x][0]].add(List2[x][1])
-        Adj[List2[x][1]].add(List2[x][0])
-        Jpos[List2[x][0]].add(x) #add index of the added J-coupling
+        posList = np.where(elem != 0.0)[0]
+        Pos1.append(posList)
+        Pos2.append(posList + Orders[pos])
+        JSizeList = np.append(JSizeList, elem[posList])
 
+    totlen = np.cumsum([len(x) for x in Pos1])[-1]
+    Positions = np.zeros((totlen,2),dtype = int)
+    start = 0
+    for x in range(len(Pos1)):
+        n = len(Pos1[x])
+        Positions[start:start + n,0] = Pos1[x]
+        Positions[start:start + n,1] = Pos2[x]
+        start +=n
+    tmpTime[0] += time.time()-abc
+    abc = time.time()
+
+    #Always have itself in, so all unused positions will not interfere
+    Adj = np.ones((Length,len(Pos1)),dtype = int) * np.arange(Length)[:,np.newaxis]
+    start = 0
+    Jpos = -1 * np.ones((Length,len(Pos1)),dtype = int) #Start with -1, filter later 
+    for x in range(len(Pos1)):
+        n = len(Pos1[x])
+        Adj[Pos1[x],x] = Pos2[x]
+        Adj[Pos2[x],x] = Pos1[x]
+        Jpos[Pos1[x],x] = np.arange(n) + start
+        start +=n
+    tmpTime[1] += time.time()-abc
+    abc = time.time()
+    
+    #Do a connection search (bfs) for all elements
     seen = set()
     Connect = []
     for v in range(len(Adj)):
         if v not in seen:
-            c = set(bfs(Adj, v))
+            c = bfs(Adj, v)
             seen.update(c)
-            Connect.append(list(c))
+            Connect.append(c)
+    tmpTime[2] += time.time()-abc
+    abc = time.time()
 
+    #Get, for all connected element, the specific Jcoupling positions
     Jconnect = []
     for x in Connect:
-        tmp = set()
-        for pos in x:
-            tmp = tmp | Jpos[pos]
-        Jconnect.append(list(tmp))
+        tmp = Jpos[x,:]
+        tmp = np.unique(tmp)
+        if tmp[0] == -1:
+            Jconnect.append(tmp[1:])
+        else:
+            Jconnect.append(tmp)
 
-    return Connect, Jconnect, List2, JSizeList
+    tmpTime[3] += time.time()-abc
+
+
+    return Connect, Jconnect, Positions, JSizeList
 
 
 HamTime = 0
@@ -120,6 +143,7 @@ IntTime = 0
 DiagTime = 0
 LinesTime = 0
 ConnectTime = 0
+tmpTime = [0,0,0,0,0]
 
 class spinSystemCls:
     def __init__(self, SpinList, Jmatrix, B0, RefFreq, HighOrder = True):
@@ -509,6 +533,8 @@ def getFreqInt(spinList, FullJmatrix, scaling, B0, RefFreq, StrongCoupling = Tru
 
     print('IntTime',IntTime)
     print('Full',time.time() - abc)
+    global tmpTime
+    print(tmpTime)
     return Freq, Int
 
 def saveSimpsonFile(data,sw,location):
