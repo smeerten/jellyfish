@@ -76,8 +76,6 @@ def bfs(Adj, start):
     return Connect
 
 def get_connections(Lines,Orders,Length):
-    global tmpTime
-    abc = time.time()
     JSizeList =  np.array([])
     Pos1 = []
     Pos2 = []
@@ -95,8 +93,6 @@ def get_connections(Lines,Orders,Length):
         Positions[start:start + n,0] = Pos1[x]
         Positions[start:start + n,1] = Pos2[x]
         start +=n
-    tmpTime[0] += time.time()-abc
-    abc = time.time()
 
     #Always have itself in, so all unused positions will not interfere
     Adj = np.ones((Length,len(Pos1)),dtype = int) * np.arange(Length)[:,np.newaxis]
@@ -108,8 +104,6 @@ def get_connections(Lines,Orders,Length):
         Adj[Pos2[x],x] = Pos1[x]
         Jpos[Pos1[x],x] = np.arange(n) + start
         start +=n
-    tmpTime[1] += time.time()-abc
-    abc = time.time()
     
     #Do a connection search (bfs) for all elements
     seen = set()
@@ -118,23 +112,20 @@ def get_connections(Lines,Orders,Length):
         if v not in seen:
             c = bfs(Adj, v)
             seen.update(c)
-            Connect.append(c)
-    tmpTime[2] += time.time()-abc
-    abc = time.time()
+            Connect.append(np.sort(c))
 
     #Get, for all connected element, the specific Jcoupling positions
     Jconnect = []
     for x in Connect:
         tmp = Jpos[x,:]
-        tmp = np.unique(tmp)
-        if tmp[0] == -1:
-            Jconnect.append(tmp[1:])
-        else:
-            Jconnect.append(tmp)
-
-    tmpTime[3] += time.time()-abc
+        tmp = tmp[np.where(tmp != -1)]
+        Jconnect.append(tmp)
 
 
+    #Connect: List of list with all coupled elements
+    #Jconnect: For each group, where are the coupling values in the list?
+    #Positions: list of [state1,state2] indexes
+    #JSizeList: coupling values of 'Positions'
     return Connect, Jconnect, Positions, JSizeList
 
 
@@ -195,10 +186,11 @@ class spinSystemCls:
         return Inten, Freq
 
     def findFreqInt(self,List, RhoZero, Detect, Pos1, Pos2, BlocksT, BlocksDiag):
+        global tmpTime
         Inten = []
         Freq = []
-
         for index in range(len(List)):
+            abc = time.time()
             Rows = List[index]
             RowPos = np.in1d(Pos1, Rows)
             RowNeed = np.where(RowPos)[0] #The elements where relevant row indices are
@@ -206,45 +198,47 @@ class spinSystemCls:
             Pos2tmp = Pos2[RowNeed]
             RhoZeroTmp = RhoZero[RowNeed]
             DetectTmp = Detect[RowNeed]
+            tmpTime[0] += time.time() - abc
             if len(RowNeed) == 0:
                 continue
             for index2 in range(len(List)):
                 #Make RhoZero and Detect for this element
+                abc = time.time()
                 Cols = List[index2]
                 ColPos = np.in1d(Pos2tmp, Cols)
                 Needed = np.where(ColPos)[0]
+                if len(Needed) == 0: #Skip if empty
+                    continue
                 ColNeed = Pos2tmp[Needed]
                 RowNeed = Pos1tmp[Needed]
                 RhoElem = RhoZeroTmp[Needed]
                 DetectElem = DetectTmp[Needed]
-                if len(Needed) == 0:
-                    continue
+                tmpTime[1] += time.time() - abc
+                abc = time.time()
 
                 ##Convert to new system
-                sort_idx = np.argsort(Cols)
-                idx = np.searchsorted(Cols,ColNeed,sorter = sort_idx)
-                to_values = np.arange(len(Cols))
-                ColOut = to_values[sort_idx][idx]
-                ##Convert to new system
-                sort_idx = np.argsort(Rows)
-                idx = np.searchsorted(Rows,RowNeed,sorter = sort_idx)
-                to_values = np.arange(len(Rows))
-                RowOut = to_values[sort_idx][idx]
-                #=====
+                ColOut = self.RebaseMatrix(Cols,ColNeed,None,False)
+                RowOut = self.RebaseMatrix(Rows,RowNeed,None,False)
+                #Make Matrix
                 DetectMat = np.zeros((len(Rows),len(Cols)))
                 DetectMat[RowOut,ColOut] = DetectElem
                 RhoZeroMat = np.zeros((len(Rows),len(Cols)))
                 RhoZeroMat[RowOut,ColOut] = RhoElem
+                tmpTime[2] += time.time() - abc
+                abc = time.time()
 
                 RhoZeroMat = np.dot(np.transpose(BlocksT[index]),np.dot(RhoZeroMat,BlocksT[index2]))
                 DetectMat = np.dot(np.transpose(BlocksT[index]),np.dot(DetectMat,BlocksT[index2]))
+                tmpTime[3] += time.time() - abc
+                abc = time.time()
 
-                DetectMat = np.multiply(DetectMat , RhoZeroMat)
-                Pos = np.where(DetectMat > 1e-9)
-                tmp = np.array(DetectMat[Pos])
+                DetectMat = DetectMat * RhoZeroMat
+                Pos = np.where(DetectMat > 1e-9) 
+                tmp = DetectMat[Pos]
                 Inten = Inten  + list(tmp.flatten())
                 tmp2 = BlocksDiag[index][Pos[0]] - BlocksDiag[index2][Pos[1]]
-                Freq= Freq + list(np.abs(tmp2) - np.abs(self.RefFreq))
+                Freq = Freq + list(np.abs(tmp2) - np.abs(self.RefFreq))
+                tmpTime[4] += time.time() - abc
 
         return np.array(Inten), np.array(Freq)
        
@@ -261,26 +255,16 @@ class spinSystemCls:
         LinesTime += time.time() - abc
         abc = time.time()
         Connect, Jconnect, Jmatrix, JSize = get_connections(Lines,Orders,self.MatrixSize)
-        Connect = [np.sort(x) for x in Connect] #Sort 
+        #Connect: List of list with all coupled elements
+        #Jconnect: For each group, where are the coupling values in Jmatrix?
+        #Jmatrix: list of [state1,state2] indexes
+        #JSize: coupling values of 'Jmatrix'
         ConnectTime += time.time() - abc
 
         BlocksDiag = []
         BlocksT = []
-        for x in range(len(Connect)):
-            pos = Connect[x]
-            H = np.zeros((len(pos),len(pos)))
-            if len(pos) > 1:
-                Jpos = Jmatrix[Jconnect[x],0:2]
-                Jval = JSize[Jconnect[x]]
-                #Convert Jpos to new system
-                sort_idx = np.argsort(pos)
-                idx = np.searchsorted(pos,Jpos[:,0:2],sorter = sort_idx)
-                to_values = np.arange(len(pos))
-                out = to_values[sort_idx][idx]
-                #Make H
-                H[out[:,1],out[:,0]] = Jval
-                H[out[:,0],out[:,1]] = Jval
-            H[range(len(pos)),range(len(pos))] = DiagLine[pos]
+        for x, Pos in enumerate(Connect):
+            H = self.MakeSubH(Jmatrix,JSize,Jconnect[x],Pos,DiagLine)
             abc = time.time()
             tmp1, tmp2 = np.linalg.eigh(H)
             DiagTime +=time.time() - abc
@@ -288,6 +272,42 @@ class spinSystemCls:
             BlocksT.append(tmp2)
 
         return BlocksDiag, BlocksT, Connect
+
+    def MakeSubH(self,Jmatrix,JSize,Jconnect,Pos,DiagLine):
+        Dim = len(Pos)
+        if len(Pos) > 1:
+            Jpos = Jmatrix[Jconnect]
+            Jval = JSize[Jconnect]
+            #Convert Jpos to new system
+            H = self.RebaseMatrix(Pos,Jpos,Jval,True)
+        else:
+            H = np.zeros((Dim,Dim))
+        H[range(Dim),range(Dim)] = DiagLine[Pos] #Add diagonal Shift + zpart of J
+        return H
+
+    def RebaseMatrix(self,Pos,Jpos,Jval,makeH):
+        """ 
+           Makes a matrix (Hamiltonian) from an input list of off-diagonal elements
+           Pos: list with positions of the states in the full matrix should be SORTED
+           Jpos: Positions of the cross terms in the full matrix
+           Jval: values of these crossterms
+        """
+        Dim = len(Pos)
+        #Convert the state numbers to the new representation (i.e. 0,1,2,3...)
+        
+        idx = np.searchsorted(Pos,Jpos)
+        to_values = np.arange(Dim)
+        out = to_values[idx] #Off diagonal term positions in new frame
+        if makeH:
+            #Make H
+            H = np.zeros((Dim,Dim))
+            H[out[:,1],out[:,0]] = Jval #Set off diagonal terms
+            #H[out[:,0],out[:,1]] = Jval #Positions are sorted, so this line should not be needed
+            return H
+        else:
+            return out
+
+
 
     def MakeShiftH(self):
         """ Makes the shift Hamiltonian
