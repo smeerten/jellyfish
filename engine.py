@@ -20,13 +20,13 @@
 import os
 import numpy as np
 import time
-import scipy.sparse
 import scipy.signal
-try: #If numba exists, use jit, otherwise make a mock decorator
-    from numba import jit
-except:
-    def jit(func):
-        return func
+from itertools import product
+#try: #If numba exists, use jit, otherwise make a mock decorator
+#    from numba import jit
+#except:
+#    def jit(func):
+#        return func
 
 GAMMASCALE = 42.577469 / 100
 with open(os.path.dirname(os.path.realpath(__file__)) +"/IsotopeProperties") as isoFile:
@@ -85,7 +85,7 @@ def get_connections(Lines,Orders,Length):
         Pos2.append(posList + Orders[pos])
         JSizeList = np.append(JSizeList, elem[posList])
 
-    totlen = np.cumsum([len(x) for x in Pos1])[-1]
+    totlen = int(np.sum([len(x) for x in Pos1]))
     Positions = np.zeros((totlen,2),dtype = int)
     start = 0
     for x in range(len(Pos1)):
@@ -95,13 +95,15 @@ def get_connections(Lines,Orders,Length):
         start +=n
 
     #Always have itself in, so all unused positions will not interfere
-    Adj = np.ones((Length,len(Pos1)),dtype = int) * np.arange(Length)[:,np.newaxis]
+    #Adj has twice the positions as Pos1, as we also need the inverse to be saved
+    Adj = np.ones((Length,len(Pos1)*2),dtype = int) * np.arange(Length)[:,np.newaxis]
     start = 0
     Jpos = -1 * np.ones((Length,len(Pos1)),dtype = int) #Start with -1, filter later 
     for x in range(len(Pos1)):
         n = len(Pos1[x])
-        Adj[Pos1[x],x] = Pos2[x]
-        Adj[Pos2[x],x] = Pos1[x]
+        Adj[Pos1[x],x * 2] = Pos2[x]
+        #Also save inverse coupling
+        Adj[Pos2[x],x * 2 + 1] = Pos1[x]
         Jpos[Pos1[x],x] = np.arange(n) + start
         start +=n
     
@@ -144,7 +146,7 @@ class spinSystemCls:
         self.B0 = B0
         self.RefFreq = RefFreq
         self.HighOrder = HighOrder
-        self.GetMatrixSize()
+        self.MatrixSize = self.GetMatrixSize()
         self.IzList = self.GetIz()
         self.IpList = self.GetIplus()
         self.Int, self.Freq = self.GetFreqInt() 
@@ -167,7 +169,7 @@ class spinSystemCls:
             I = self.SpinList[spin].I
             #The 'sign' appears to be that of the Imin, but answer is correct. Sign inversion leads to
             #very bad results
-            IpList[spin,:] = np.sqrt(I * (I +1) - self.IzList[spin,:] * (self.IzList[spin,:] - 1))
+            IpList[spin,:] = np.sqrt(I * (I +1) - self.IzList[spin] * (self.IzList[spin] - 1))
         return IpList
 
     def GetFreqInt(self):
@@ -227,11 +229,13 @@ class spinSystemCls:
                 tmpTime[2] += time.time() - abc
                 abc = time.time()
 
+                #Transform to detection frame
                 RhoZeroMat = np.dot(np.transpose(BlocksT[index]),np.dot(RhoZeroMat,BlocksT[index2]))
                 DetectMat = np.dot(np.transpose(BlocksT[index]),np.dot(DetectMat,BlocksT[index2]))
                 tmpTime[3] += time.time() - abc
                 abc = time.time()
 
+                #Get intensity and frequency of relevant elements
                 DetectMat = DetectMat * RhoZeroMat
                 Pos = np.where(DetectMat > 1e-9) 
                 tmp = DetectMat[Pos]
@@ -255,10 +259,6 @@ class spinSystemCls:
         LinesTime += time.time() - abc
         abc = time.time()
         Connect, Jconnect, Jmatrix, JSize = get_connections(Lines,Orders,self.MatrixSize)
-        #Connect: List of list with all coupled elements
-        #Jconnect: For each group, where are the coupling values in Jmatrix?
-        #Jmatrix: list of [state1,state2] indexes
-        #JSize: coupling values of 'Jmatrix'
         ConnectTime += time.time() - abc
 
         BlocksDiag = []
@@ -294,7 +294,6 @@ class spinSystemCls:
         """
         Dim = len(Pos)
         #Convert the state numbers to the new representation (i.e. 0,1,2,3...)
-        
         idx = np.searchsorted(Pos,Jpos)
         to_values = np.arange(Dim)
         out = to_values[idx] #Off diagonal term positions in new frame
@@ -317,7 +316,7 @@ class spinSystemCls:
         """
         HShift = np.zeros(self.MatrixSize)
         for spin in range(self.nSpins):
-            HShift +=  (self.SpinList[spin].shift * 1e-6 + 1) * self.SpinList[spin].Gamma * self.B0 * self.IzList[spin,:] 
+            HShift +=  (self.SpinList[spin].shift * 1e-6 + 1) * self.SpinList[spin].Gamma * self.B0 * self.IzList[spin] 
         return HShift
 
     def MakeJLines(self):
@@ -326,13 +325,13 @@ class spinSystemCls:
         HJz = np.zeros(self.MatrixSize)
         for spin in range(self.nSpins):
             for subspin in range(spin,self.nSpins):
-                    if self.Jmatrix[spin,subspin] != 0:
-                        HJz += self.IzList[spin,:] * self.IzList[subspin,:] * self.Jmatrix[spin,subspin]
-                        if self.HighOrder:
-                            Val, order = self.MakeIpSm( spin, subspin)
-                            if Val is not None:
-                                Orders.append(order)
-                                Lines.append(Val * self.Jmatrix[spin,subspin])
+                if self.Jmatrix[spin,subspin] != 0:
+                    HJz += self.IzList[spin] * self.IzList[subspin] * self.Jmatrix[spin,subspin]
+                    if self.HighOrder:
+                        Val, order = self.MakeIpSm( spin, subspin)
+                        if Val is not None:
+                            Orders.append(order)
+                            Lines.append(Val * self.Jmatrix[spin,subspin])
         return HJz, Lines, Orders
 
     def MakeDetectRho(self):
@@ -369,15 +368,15 @@ class spinSystemCls:
             subspin: the index of S
             Returns the relevant line, and order of the diagonal it needs to be placed.
         """
-        middlelength = np.cumprod([1] + [i.Length for i in self.SpinList[spin + 1:subspin]])[-1]
-        afterlength = np.cumprod([1] + [i.Length for i in self.SpinList[subspin + 1:]])[-1]
+        middlelength = np.prod([1] + [i.Length for i in self.SpinList[spin + 1:subspin]])
+        afterlength = np.prod([1] + [i.Length for i in self.SpinList[subspin + 1:]])
 
         #Magic statement for the position of the line
         order = (middlelength * self.SpinList[subspin].Length - 1) *  afterlength  
 
         if order != 0:
-            Iplus = self.IpList[spin,:][:-order]
-            Smin = np.flipud(self.IpList[subspin,:])[:-order] #Iminus is flipped Iplus
+            Iplus = self.IpList[spin][:-order]
+            Smin = np.flipud(self.IpList[subspin])[:-order] #Iminus is flipped Iplus
             Line = 0.5 * Iplus * Smin
 
             return Line, order
@@ -402,9 +401,9 @@ class spinSystemCls:
             after the current spin.
 
         """
-        afterlength = np.cumprod([1] + [i.Length for i in self.SpinList[spin + 1:]])[-1]
+        afterlength = np.prod([1] + [i.Length for i in self.SpinList[spin + 1:]])
 
-        Ix = 0.5 * self.IpList[spin,:][:-afterlength]
+        Ix = 0.5 * self.IpList[spin][:-afterlength]
 
         #Afterlength is order of diagonal
         return Ix, afterlength
@@ -416,7 +415,7 @@ class spinSystemCls:
         return M
         
     def GetMatrixSize(self):
-        self.MatrixSize = np.cumprod([1] + [i.Length for i in self.SpinList])[-1]
+        return np.prod([1] + [i.Length for i in self.SpinList])
         
 def MakeSpectrum(Intensities, Frequencies, AxisLimits, RefFreq,LineBroadening,NumPoints, Real = True):
     Limits = tuple(AxisLimits * RefFreq * 1e-6)
@@ -450,6 +449,9 @@ def getFullSize(SpinList):
     return Size
 
 def calcCPM(I,N):
+    """ Uses the Composite Particle Model to redefine
+        the supplied spins with multiplicity to a better representation.
+    """
     Kernel = np.ones((int(2*I+1)))
 
     Pattern = [1]
@@ -469,67 +471,36 @@ def calcCPM(I,N):
     return Ieff, Scale
 
 def expandSpinsys(SpinList,Jmatrix):
-    NSpins = len(SpinList)
     fullSpinList = []
-    fullSpinListIndex = []
     intenScale = []
-    for Spin in range(NSpins):
+    for Spin in SpinList:
         spinsTemp = []
         intens = []
-        index = ABBREVLIST.index(SpinList[Spin][0])
-        multi = SpinList[Spin][2]
+        index = ABBREVLIST.index(Spin[0])
+        multi = Spin[2]
         I = SPINLIST[index]
-
         Ieff, Scale = calcCPM(I,multi)
-        for pos in range(len(Ieff)):
-            spinsTemp.append(spinCls(SpinList[Spin][0],SpinList[Spin][1],SpinList[Spin][3],Ioverwrite = Ieff[pos]))
+        for pos, I in enumerate(Ieff):
+            spinsTemp.append(spinCls(Spin[0],Spin[1],Spin[3],Ioverwrite = I))
             intens.append(Scale[pos])
 
         fullSpinList.append(spinsTemp)
-        fullSpinListIndex.append(Spin)
         intenScale.append(intens)
 
-    totalSpins = len(fullSpinListIndex)    
-    FullJmatrix = np.zeros((totalSpins,totalSpins))    
-    for Spin in range(totalSpins):
-        for subSpin in range(totalSpins):
-            FullJmatrix[Spin,subSpin] = Jmatrix[fullSpinListIndex[Spin],fullSpinListIndex[subSpin]]
-        
-    #------------------    
-    if FullJmatrix is None:
-        FullJmatrix = np.zeros(totalSpins,totalSpins)
 
-
-    #Now, we must make a list of the spinsystems, split for each occurance
-    spinsys = [[x] for x in fullSpinList[0]]
-    for group in fullSpinList[1:]:
-        full = []
-        for part in spinsys:
-            tmp = []
-            for elem in group:
-                new = part + [elem]
-                tmp.append(new)
-            full = full + tmp
-        spinsys = full
-
-    #Now, we must make a list of relative intensities of each part
-    scaling = [[x] for x in intenScale[0]]
-    for group in intenScale[1:]:
-        full = []
-        for part in scaling:
-            tmp = []
-            for elem in group:
-                new = part + [elem]
-                tmp.append(new)
-            full = full + tmp
-        scaling = full
-    scaling = np.array([np.cumprod(x)[-1] for x in scaling])
-
+    #Get all possible permeations of the spin combinations
+    spinsys = []
+    for x in product(*fullSpinList):
+        spinsys.append(x)
+    #and get the scaling
+    scaling = []
+    for x in product(*intenScale):
+        scaling.append(np.prod(x))
+ 
     #Scale with full matrix size (Boltzmann partition function)
-    Size = getFullSize(SpinList)
-    scaling = np.array(scaling) / Size
+    scaling = np.array(scaling) / getFullSize(SpinList)
 
-    return spinsys, FullJmatrix, scaling
+    return spinsys, Jmatrix, scaling
 
 
 
@@ -537,6 +508,7 @@ def getFreqInt(spinList, FullJmatrix, scaling, B0, RefFreq, StrongCoupling = Tru
     abc = time.time()
     Freq = np.array([])
     Int = np.array([])
+
     for pos in range(len(spinList)):
        SpinSys = spinSystemCls(spinList[pos], FullJmatrix, B0, RefFreq, StrongCoupling)
        Freq = np.append(Freq, SpinSys.Freq)
