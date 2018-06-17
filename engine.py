@@ -417,7 +417,7 @@ class spinSystemCls:
     def GetMatrixSize(self):
         return np.prod([1] + [i.Length for i in self.SpinList])
         
-def MakeSpectrum(Intensities, Frequencies, AxisLimits, RefFreq,LineBroadening,NumPoints, Real = True):
+def MakeSpectrum(Intensities, Frequencies, AxisLimits, RefFreq,LineBroadening,NumPoints):
     Limits = tuple(AxisLimits * RefFreq * 1e-6)
     sw = Limits[1] - Limits[0]
     dw = 1.0/ sw
@@ -434,8 +434,6 @@ def MakeSpectrum(Intensities, Frequencies, AxisLimits, RefFreq,LineBroadening,Nu
        TimeAxis = np.linspace(0,NumPoints-1,NumPoints) * dw
        Fid = Fid * np.exp(-TimeAxis * lb)
        Spectrum = np.fft.fftshift(np.fft.fft(Fid))
-       if Real:
-           Spectrum = np.real(Spectrum)
     Axis = (Axis[1:] + 0.5 * (Axis[0] - Axis[1]))  / (RefFreq * 1e-6)
     return Spectrum * NumPoints, Axis, RefFreq
 
@@ -488,7 +486,7 @@ def expandSpinsys(SpinList,Jmatrix):
         intenScale.append(intens)
 
 
-    #Get all possible permeations of the spin combinations
+    #Get all possible permutations of the spin combinations
     spinsys = []
     for x in product(*fullSpinList):
         spinsys.append(x)
@@ -529,7 +527,9 @@ def getFreqInt(spinList, FullJmatrix, scaling, B0, RefFreq, StrongCoupling = Tru
     print(tmpTime)
     return Freq, Int
 
-def saveSimpsonFile(data,sw,location):
+def saveSimpsonFile(data,limits,ref,location):
+
+        sw = (limits[1] - limits[0]) * ref * 1e-6
         with open(location, 'w') as f:
             f.write('SIMP\n')
             f.write('NP=' + str(len(data)) + '\n')

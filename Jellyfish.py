@@ -96,8 +96,8 @@ class PlotFrame(Plot1DFrame):
         self.ydata = ydata
 
     def plotReset(self, xReset=True, yReset=True):  # set the plot limits to min and max values
-        miny = min(self.ydata)
-        maxy = max(self.ydata)
+        miny = min(np.real(self.ydata))
+        maxy = max(np.real(self.ydata))
         differ = 0.05 * (maxy - miny)  # amount to add to show all datapoints (10%)
         if yReset:
             self.yminlim = miny - differ
@@ -111,7 +111,7 @@ class PlotFrame(Plot1DFrame):
         
     def showFid(self):
         self.ax.cla()
-        self.ax.plot(self.xdata, self.ydata)
+        self.ax.plot(self.xdata, np.real(self.ydata))
         if self.xmaxlim is None:
             self.plotReset()
         self.ax.set_xlim(self.xmaxlim, self.xminlim)
@@ -644,8 +644,12 @@ class MainProgram(QtWidgets.QMainWindow):
         self.menubar.addMenu(self.filemenu)
         self.savefigAct = self.filemenu.addAction('Export Figure', self.saveFigure, QtGui.QKeySequence.Print)
         self.savefigAct.setToolTip('Export as Figure')
-        self.savedatAct = self.filemenu.addAction('Export Data', self.saveData)
+        self.savedatAct = self.filemenu.addAction('Export Data (ASCII)', self.saveASCII)
         self.savedatAct.setToolTip('Export as text')
+        self.saveMatAct = self.filemenu.addAction('Export as ssNake .mat', self.saveSsNake)
+        self.saveMatAct.setToolTip('Export as ssNake data')
+        self.saveSimpAct = self.filemenu.addAction('Export as Simpson', self.saveSimpson)
+        self.saveSimpAct.setToolTip('Export as Simpson spectrum')
         self.quitAct = self.filemenu.addAction('&Quit', self.fileQuit, QtGui.QKeySequence.Quit)
         self.quitAct.setToolTip('Close Jellyfish')
 
@@ -692,16 +696,29 @@ class MainProgram(QtWidgets.QMainWindow):
             dpi = 150
             self.fig.savefig(f, format='png', dpi=dpi)
 
-    def saveData(self):
+    def saveASCII(self):
         f = QtWidgets.QFileDialog.getSaveFileName(self, 'Save File', 'Spectrum.txt' ,filter = '(*.txt)')
         if type(f) is tuple:
             f = f[0]        
         if f:
             data = np.zeros((len(self.Axis),2))
             data[:,0] = self.Axis
-            data[:,1] = self.Spectrum
+            data[:,1] = np.real(self.Spectrum)
             np.savetxt(f,data)
 
+    def saveSsNake(self):
+        f = QtWidgets.QFileDialog.getSaveFileName(self, 'Save File', 'Spectrum.mat' ,filter = '(*.mat)')
+        if type(f) is tuple:
+            f = f[0]        
+        if f:
+            en.saveMatlabFile(self.Spectrum,self.Limits,self.RefFreq,self.Axis,f)
+
+    def saveSimpson(self):
+        f = QtWidgets.QFileDialog.getSaveFileName(self, 'Save File', 'Spectrum.spe' ,filter = '(*.spe)')
+        if type(f) is tuple:
+            f = f[0]        
+        if f:
+            en.saveSimpsonFile(self.Spectrum,self.Limits,self.RefFreq,f)
 
     def fileQuit(self):
         self.close()
