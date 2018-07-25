@@ -20,7 +20,6 @@
 import os
 import numpy as np
 import time
-import scipy.signal
 from itertools import product
 #try: #If numba exists, use jit, otherwise make a mock decorator
 #    from numba import jit
@@ -424,16 +423,17 @@ def MakeSpectrum(Intensities, Frequencies, AxisLimits, RefFreq,LineBroadening,Nu
     lb = LineBroadening * np.pi
     #Make spectrum
     Spectrum, Axis = np.histogram(Frequencies, int(NumPoints), Limits , weights = Intensities)
-    
     if np.sum(np.isnan(Spectrum)):
-       Spectrum = np.zeros_like(Axis)
+        Spectrum = np.zeros_like(Axis)
     elif np.max(Spectrum) == 0.0:
         pass
     else:
-       Fid = np.fft.ifft(np.fft.ifftshift(np.conj(scipy.signal.hilbert(Spectrum))))
-       TimeAxis = np.linspace(0,NumPoints-1,NumPoints) * dw
-       Fid = Fid * np.exp(-TimeAxis * lb)
-       Spectrum = np.fft.fftshift(np.fft.fft(Fid))
+        Fid = np.fft.ifft(np.fft.ifftshift(Spectrum))
+        TimeAxis = np.linspace(0,NumPoints-1,NumPoints) * dw
+        window = np.exp(-TimeAxis * lb)
+        window[-1:-(int(len(TimeAxis) / 2) + 1):-1] = window[:int(len(TimeAxis) / 2)]
+        Fid *= window
+        Spectrum = np.fft.fftshift(np.fft.fft(Fid))
     Axis = (Axis[1:] + 0.5 * (Axis[0] - Axis[1]))  / (RefFreq * 1e-6)
     return Spectrum * NumPoints, Axis, RefFreq
 
