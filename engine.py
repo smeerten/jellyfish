@@ -229,8 +229,9 @@ class spinSystemCls:
                 abc = time.time()
 
                 #Transform to detection frame
-                RhoZeroMat = np.dot(np.transpose(BlocksT[index]),np.dot(RhoZeroMat,BlocksT[index2]))
-                DetectMat = np.dot(np.transpose(BlocksT[index]),np.dot(DetectMat,BlocksT[index2]))
+                #Equal to: np.dot(np.transpose(a),np.dot(b,a))
+                DetectMat = np.einsum('ij,jk',np.transpose(BlocksT[index]),np.einsum('ij,jk',DetectMat,BlocksT[index2]))
+                RhoZeroMat = np.einsum('ij,jk',np.transpose(BlocksT[index]),np.einsum('ij,jk',RhoZeroMat,BlocksT[index2]))
                 tmpTime[3] += time.time() - abc
                 abc = time.time()
 
