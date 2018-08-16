@@ -72,7 +72,7 @@ def GetFreqInt(spinSys, B0, RefFreq):
 
     BlocksDiag, BlocksT = MakeH(spinSys, B0)
 
-    Inten, Freq = findFreqInt(spinSys.Connect, spinSys.RhoZero, spinSys.Detect, spinSys.DPos1, spinSys.DPos2, BlocksT, BlocksDiag, RefFreq, spinSys.Scaling)
+    Inten, Freq = findFreqInt(spinSys, BlocksT, BlocksDiag, RefFreq)
 
     return Inten, Freq
 
@@ -82,18 +82,18 @@ def MakeH(spinSys, B0):
     BlocksDiag = []
     BlocksT = []
     for x, Pos in enumerate(spinSys.Connect):
-        H = MakeSubH(spinSys.Jmatrix,spinSys.JSize,spinSys.Jconnect[x],Pos,DiagLine)
+        H = MakeSubH(spinSys,spinSys.Jconnect[x],Pos,DiagLine)
         tmp1, tmp2 = np.linalg.eigh(H)
         BlocksDiag.append(tmp1)
         BlocksT.append(tmp2)
 
     return BlocksDiag, BlocksT
 
-def MakeSubH(Jmatrix,JSize,Jconnect,Pos,DiagLine):
+def MakeSubH(spinSys,Jconnect,Pos,DiagLine):
     Dim = len(Pos)
     if len(Pos) > 1:
-        Jpos = Jmatrix[Jconnect]
-        Jval = JSize[Jconnect]
+        Jpos = spinSys.Jmatrix[Jconnect]
+        Jval = spinSys.JSize[Jconnect]
         #Convert Jpos to new system
         H = RebaseMatrix(Pos,Jpos,Jval,True)
     else:
@@ -122,22 +122,20 @@ def RebaseMatrix(Pos,Jpos,Jval,makeH):
     else:
         return out
 
-def findFreqInt(List, RhoZero, Detect, Pos1, Pos2, BlocksT, BlocksDiag, RefFreq, Scaling):
-    Inten = []
-    Freq = []
-    for index in range(len(List)):
-        Rows = List[index]
-        RowPos = np.in1d(Pos1, Rows)
+def findFreqInt(spinSys, BlocksT, BlocksDiag, RefFreq):
+    Inten = np.array([])
+    Freq = np.array([])
+    for index, Rows in enumerate(spinSys.Connect):
+        RowPos = np.in1d(spinSys.DPos1, Rows)
         RowNeed = np.where(RowPos)[0] #The elements where relevant row indices are
-        Pos1tmp = Pos1[RowNeed]
-        Pos2tmp = Pos2[RowNeed]
-        RhoZeroTmp = RhoZero[RowNeed]
-        DetectTmp = Detect[RowNeed]
         if len(RowNeed) == 0:
             continue
-        for index2 in range(len(List)):
+        Pos1tmp = spinSys.DPos1[RowNeed]
+        Pos2tmp = spinSys.DPos2[RowNeed]
+        RhoZeroTmp = spinSys.RhoZero[RowNeed]
+        DetectTmp = spinSys.Detect[RowNeed]
+        for index2, Cols in enumerate(spinSys.Connect):
             #Make RhoZero and Detect for this element
-            Cols = List[index2]
             ColPos = np.in1d(Pos2tmp, Cols)
             Needed = np.where(ColPos)[0]
             if len(Needed) == 0: #Skip if empty
@@ -164,12 +162,11 @@ def findFreqInt(List, RhoZero, Detect, Pos1, Pos2, BlocksT, BlocksDiag, RefFreq,
             #Get intensity and frequency of relevant elements
             DetectMat = DetectMat * RhoZeroMat
             Pos = np.where(DetectMat > 1e-9) 
-            tmp = DetectMat[Pos]
-            Inten = Inten  + list(tmp.flatten())
+            Inten = np.append(Inten, DetectMat[Pos].flatten())
             tmp2 = BlocksDiag[index][Pos[0]] - BlocksDiag[index2][Pos[1]]
-            Freq = Freq + list(np.abs(tmp2) - np.abs(RefFreq))
+            Freq = np.append(Freq, np.abs(tmp2) - np.abs(RefFreq))
 
-    return  np.array(Freq), np.array(Inten) * Scaling
+    return  Freq, Inten * spinSys.Scaling
 
 #===============================
 
