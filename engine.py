@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 # Copyright 2017 Wouter Franssen and Bas van Meerten
 
@@ -20,7 +21,8 @@
 import os
 import numpy as np
 import time
-from itertools import product
+from itertools import product, permutations
+import sys
 #try: #If numba exists, use jit, otherwise make a mock decorator
 #    from numba import jit
 #except:
@@ -28,20 +30,23 @@ from itertools import product
 #        return func
 
 GAMMASCALE = 42.577469 / 100
-with open(os.path.dirname(os.path.realpath(__file__)) +"/IsotopeProperties") as isoFile:
-    isoList = [line.strip().split('\t') for line in isoFile]
+isoPath = os.path.dirname(os.path.realpath(__file__)) + os.path.sep + "IsotopeProperties"
+if sys.version_info < (3,):  
+    with open(isoPath) as isoFile:
+        isoList = [line.strip().split('\t') for line in isoFile]
+else:
+    with open(isoPath, encoding = 'UTF-8') as isoFile:
+        isoList = [line.strip().split('\t') for line in isoFile]
 isoList = isoList[1:]
 N = len(isoList)
 ABBREVLIST = []
 SPINLIST = np.zeros(N)
-gammaList = np.zeros(N)
 FREQRATIOLIST = np.zeros(N)
 
 for i in range(N):
     isoN = isoList[i]
     if isoN[3] != '-' and isoN[4] != '-' and isoN[8] != '-':
-        atomMass = int(isoN[3])
-        ABBREVLIST.append( str(int(atomMass)) + isoN[1])
+        ABBREVLIST.append( str(int(isoN[3])) + isoN[1])
         SPINLIST[i] = isoN[4]
         FREQRATIOLIST[i] = isoN[8]
 
@@ -66,8 +71,32 @@ class spinCls:
         self.Length = int(self.I * 2 + 1)
         self.Ident = np.ones(self.Length)
 
+    def __eq__(self,other):
+        if isinstance(other,spinCls):
+            if self.index == other.index and self.I == other.I and self.shift == other.shift and self.Detect == other.Detect:
+                return True
+            else:
+                return False
+        else:
+            return NotImplemented
+
 
 #==============================
+def bfs(Adj, start):
+    # Use breadth first search (BFS) for find connected elements
+    seen = set()
+    nextlevel = {start}
+    Connect = []
+    while nextlevel:
+        thislevel = nextlevel
+        nextlevel = set()
+        for v in thislevel:
+            if v not in seen:
+                Connect.append(v)
+                seen.add(v)
+                nextlevel.update(Adj[v,:])
+    return Connect
+
 def GetFreqInt(spinSys, B0, RefFreq):
 
     BlocksDiag, BlocksT = MakeH(spinSys, B0)
@@ -92,7 +121,7 @@ def MakeH(spinSys, B0):
 def MakeSubH(spinSys,Jconnect,Pos,DiagLine):
     Dim = len(Pos)
     if len(Pos) > 1:
-        Jpos = spinSys.Jmatrix[Jconnect]
+        Jpos = spinSys.JposList[Jconnect]
         Jval = spinSys.JSize[Jconnect]
         #Convert Jpos to new system
         H = RebaseMatrix(Pos,Jpos,Jval,True)
@@ -173,23 +202,24 @@ def findFreqInt(spinSys, BlocksT, BlocksDiag, RefFreq):
 class spinSystemCls:
     """ Class that holds a single spinsystem
         The init calculates all the B0 independent parameters. This way, the class can be reused to 
-        simulate that same spinsys at multiple fields
+        simulate that same spinsys at multiple fields.
+        The heavy calcualtions are in the 'prepare' function. Splitting this from the init
+        allows for comparison of spinSystemCls instances before these calculations.
     """
     def __init__(self, SpinList, Jmatrix, Scaling = 1, HighOrder = True):
         self.SpinList = SpinList
         self.nSpins = len(self.SpinList)
-        self.Jmatrix = Jmatrix
+        self.Jmatrix = np.array(Jmatrix)
         self.HighOrder = HighOrder
         self.Scaling = Scaling
         self.MatrixSize = self.__GetMatrixSize()
 
     def prepare(self):
-        # Calc the more involved elements. Splitting this from the init allows for comparison of spinSystemCls elements
-        # before the elements below are calculated
+        # Calc the more involved elements. 
         self.IzList = self.__GetIz()
         self.IpList = self.__GetIplus()
         self.Detect, self.RhoZero, self.DPos1, self.DPos2 = self.__MakeDetectRho()
-        self.HShift, self.HJz, self.Connect, self.Jconnect, self.Jmatrix, self.JSize = self.__prepareH()
+        self.HShift, self.HJz, self.Connect, self.Jconnect, self.JposList, self.JSize = self.__prepareH()
 
     def __GetIz(self):
         IzList = np.zeros((self.nSpins,self.MatrixSize))
@@ -216,8 +246,8 @@ class spinSystemCls:
         #Make the B0 independent Hamiltonian (i.e. HShift needs to be multiplied by B0)
         HShift = self.__MakeShiftH()
         HJz, Lines, Orders = self.__MakeJLines()
-        Connect, Jconnect, Jmatrix, JSize = self.__getConnections(Lines,Orders)
-        return HShift, HJz, Connect, Jconnect, Jmatrix, JSize
+        Connect, Jconnect, Jpos, JSize = self.__getConnections(Lines,Orders)
+        return HShift, HJz, Connect, Jconnect, Jpos, JSize
        
     def __MakeShiftH(self):
         """ Makes the shift Hamiltonian
@@ -329,20 +359,7 @@ class spinSystemCls:
         return np.prod([1] + [i.Length for i in self.SpinList])
 
 
-    def __bfs(self,Adj, start):
-        # Use breadth first search (BFS) for find connected elements
-        seen = set()
-        nextlevel = {start}
-        Connect = []
-        while nextlevel:
-            thislevel = nextlevel
-            nextlevel = set()
-            for v in thislevel:
-                if v not in seen:
-                    Connect.append(v)
-                    seen.add(v)
-                    nextlevel.update(Adj[v,:])
-        return Connect
+
 
     def __getConnections(self,Lines,Orders):
         JSizeList =  np.array([])
@@ -381,7 +398,7 @@ class spinSystemCls:
         Connect = []
         for v in range(len(Adj)):
             if v not in seen:
-                c = self.__bfs(Adj, v)
+                c = bfs(Adj, v)
                 seen.update(c)
                 Connect.append(np.sort(c))
 
@@ -451,7 +468,7 @@ def calcCPM(I,N):
     Ieff = Ieff[take]
     return Ieff, Scale
 
-def expandSpinsys(SpinList,Jmatrix):
+def performCPM(SpinList,Jmatrix):
     fullSpinList = []
     intenScale = []
     for Spin in SpinList:
@@ -468,7 +485,6 @@ def expandSpinsys(SpinList,Jmatrix):
         fullSpinList.append(spinsTemp)
         intenScale.append(intens)
 
-
     #Get all possible permutations of the spin combinations
     spinsys = []
     for x in product(*fullSpinList):
@@ -481,18 +497,94 @@ def expandSpinsys(SpinList,Jmatrix):
     #Scale with full matrix size (Boltzmann partition function)
     scaling = np.array(scaling) / getFullSize(SpinList)
 
-    return spinsys, Jmatrix, scaling
+    spinSysList = [spinSystemCls(spin, Jmatrix, scale) for spin, scale in zip(spinsys,scaling)]
 
+    return spinSysList
 
+def getIsolateSys(spinList, Jmatrix):
+    Pos1, Pos2 = np.where(Jmatrix != 0.0)
+    Length = len(spinList)
 
-def getFreqInt(spinList, FullJmatrix, scaling, B0, RefFreq, StrongCoupling = True):
+    Adj = np.ones((Length,len(Pos1)*2),dtype = int) * np.arange(Length)[:,np.newaxis]
+    for x in range(len(Pos1)):
+        Adj[Pos1[x],x * 2] = Pos2[x]
+        Adj[Pos2[x],x * 2 + 1] = Pos1[x]
+    
+    #Do a connection search (bfs) for all elements
+    seen = set()
+    Connect = [] #Holds the groups of coupled spins
+    for v in range(len(Adj)):
+        if v not in seen:
+            c = bfs(Adj, v)
+            seen.update(c)
+            Connect.append(np.sort(c))
+
+    isoSpins = []
+    for con in Connect:
+        spinTemp = [spinList[x] for x in con]
+        Jtemp = Jmatrix[con,:]
+        Jtemp = Jtemp[:,con]
+        isoSpins.append([spinTemp,Jtemp])
+    return isoSpins
+
+def compareSpinsys(spinSys1,spinSys2):
+    #    self.SpinList = SpinList
+    #    self.nSpins = len(self.SpinList)
+    #    self.Jmatrix = np.array(Jmatrix)
+    #    self.HighOrder = HighOrder
+    #    self.Scaling = Scaling
+    #    self.MatrixSize = self.__GetMatrixSize()
+    if spinSys1.nSpins != spinSys2.nSpins:
+        return False
+
+    if spinSys1.MatrixSize != spinSys2.MatrixSize:
+        return False
+
+    if spinSys1.HighOrder != spinSys2.HighOrder:
+        return False
+
+    for x in permutations(range(spinSys1.nSpins)):
+        bl = all([spinSys1.SpinList[val] == spinSys2.SpinList[pos] for pos, val in enumerate(x)])
+        if bl:
+            jtmp = np.triu(np.array(spinSys1.Jmatrix))
+            jtmp = jtmp + np.transpose(jtmp)
+            jtmp = jtmp[x,:]
+            jtmp = jtmp[:,x]
+            if np.allclose(np.triu(jtmp),spinSys2.Jmatrix):
+                return True
+
+    return False
+
+def reduceSpinSys(spinSysList):
+    uniqueSys = []
+    for elem in spinSysList:
+        check = [compareSpinsys(elem,elem2) for elem2 in uniqueSys]
+        if not any(check):
+            uniqueSys.append(elem)
+        else:
+            uniqueSys[np.where(check)[0][0]].Scaling += elem.Scaling
+    return uniqueSys
+
+def expandSpinsys(spinList,Jmatrix):
+    #Get isolated parts
+    isoSys = getIsolateSys(spinList, Jmatrix)
+    
+    #Do CPM for each isolated spinsys
+    spinSysList = []
+    for elem in isoSys:
+        spinSysList = spinSysList + performCPM(elem[0],elem[1])
+
+    spinSysList = reduceSpinSys(spinSysList)
+    print('total',len(spinSysList))
+    return spinSysList
+
+def getFreqInt(spinSysList, B0, RefFreq, StrongCoupling = True):
     Freq = np.array([])
     Int = np.array([])
 
-    for pos in range(len(spinList)):
-       SpinSys = spinSystemCls(spinList[pos], FullJmatrix, scaling[pos], StrongCoupling)
-       SpinSys.prepare()
-       Ftmp, Itmp = GetFreqInt(SpinSys, B0, RefFreq)
+    for spinSys in spinSysList:
+       spinSys.prepare()
+       Ftmp, Itmp = GetFreqInt(spinSys, B0, RefFreq)
        Freq = np.append(Freq, Ftmp)
        Int = np.append(Int, Itmp)
     return Freq, Int

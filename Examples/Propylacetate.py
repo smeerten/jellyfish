@@ -23,18 +23,19 @@ Jmatrix = np.array([[0, 0, 0, 0],
                     [0, 0, 0, 6.77],
                     [0, 0, 0, 0]])
 
-fullSpinList, FullJmatrix, Scaling = en.expandSpinsys(SpinList,Jmatrix)
+#fullSpinList, FullJmatrix, Scaling = en.expandSpinsys(SpinList,Jmatrix)
+spinSysList = en.expandSpinsys(SpinList,Jmatrix)
 
 #High field
 RefFreq = 500e6
 B0 = RefFreq/Base
-Freq, Int = en.getFreqInt(fullSpinList, FullJmatrix, Scaling, B0, RefFreq, StrongCoupling)
+Freq, Int = en.getFreqInt(spinSysList, B0, RefFreq, StrongCoupling)
 Spectrum, Axis, RefFreq = en.MakeSpectrum(Int, Freq, Limits, RefFreq,Lb,NumPoints)
 en.saveMatlabFile(Spectrum,Limits,RefFreq,Axis,'propylacetate500.mat')
 
 #Low field
 RefFreq = 43e6
 B0 = RefFreq/Base
-Freq, Int = en.getFreqInt(fullSpinList, FullJmatrix, Scaling, B0, RefFreq, StrongCoupling)
+Freq, Int = en.getFreqInt(spinSysList, B0, RefFreq, StrongCoupling)
 Spectrum, Axis, RefFreq = en.MakeSpectrum(Int, Freq, Limits, RefFreq,Lb,NumPoints)
 en.saveMatlabFile(Spectrum,Limits,RefFreq,Axis,'propylacetate43.mat')

@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 # Copyright 2017 Wouter Franssen and Bas van Meerten
 
@@ -23,12 +24,12 @@ import sip
 import sys
 sip.setapi('QString', 2)
 try:
+    from PyQt5 import QtGui, QtCore, QtWidgets
+    QT = 5
+except ImportError:
     from PyQt4 import QtGui, QtCore
     from PyQt4 import QtGui as QtWidgets
     QT = 4
-except ImportError:
-    from PyQt5 import QtGui, QtCore, QtWidgets
-    QT = 5
 import matplotlib
 if QT ==4:
     matplotlib.use('Qt4Agg')
@@ -43,38 +44,6 @@ from safeEval import safeEval
 import time
 import engine as en
 NSTEPS = 1000
-
-GAMMASCALE = 42.577469 / 100
-with open(os.path.dirname(os.path.realpath(__file__)) +"/IsotopeProperties") as isoFile:
-    isoList = [line.strip().split('\t') for line in isoFile]
-isoList = isoList[1:]
-N = len(isoList)
-#nameList = []
-#fullNameList = []
-ABBREVLIST = []
-atomNumList = np.zeros(N)
-atomMassList = np.zeros(N)
-spinList = np.zeros(N)
-abundanceList = np.zeros(N)
-gammaList = np.zeros(N)
-freqRatioList = np.zeros(N)
-
-for i in range(N):
-    isoN = isoList[i]
-    if isoN[3] != '-' and isoN[4] != '-' and isoN[8] != '-':
-        atomNumList[i] = int(isoN[0])
-#        nameList = np.append(nameList, isoN[1])
-#        fullNameList = np.append(fullNameList, isoN[2])
-        atomMassList[i] = int(isoN[3])
-        ABBREVLIST.append( str(int(atomMassList[i])) + isoN[1])
-        spinList[i] = isoN[4]
-        if isoN[5] == '-':
-            abundanceList[i] = 0
-        else:
-            abundanceList[i] = isoN[5]
-        freqRatioList[i] = isoN[8]
-
-
 
 class PlotFrame(Plot1DFrame):
 
@@ -152,7 +121,7 @@ class SettingsFrame(QtWidgets.QWidget):
            
         grid.addWidget(QtWidgets.QLabel("Ref Nucleus:"), 1, 2,QtCore.Qt.AlignHCenter)
         self.RefNucleusSettings = QtWidgets.QComboBox()
-        self.RefNucleusSettings.addItems(ABBREVLIST)
+        self.RefNucleusSettings.addItems(en.ABBREVLIST)
         self.RefNucleusSettings.setCurrentIndex(0)
         self.RefNucleusSettings.currentIndexChanged.connect(self.ApplySettings)
         grid.addWidget(self.RefNucleusSettings, 1, 3)
@@ -183,7 +152,7 @@ class SettingsFrame(QtWidgets.QWidget):
         
     def ApplySettings(self,ResetAxis = False, recalc = True):
         self.father.B0 = safeEval(self.B0Setting.text())
-        self.father.RefNucleus = ABBREVLIST[self.RefNucleusSettings.currentIndex()]
+        self.father.RefNucleus = en.ABBREVLIST[self.RefNucleusSettings.currentIndex()]
         self.father.SetRefFreq()
         if self.LbType.currentIndex() == 0:
             self.father.Lb = safeEval(self.LbSetting.text())
@@ -443,7 +412,7 @@ class addIsotopeWindow(QtWidgets.QDialog):
         grid.addWidget(QtWidgets.QLabel("Multiplicity:"), 0, 2,QtCore.Qt.AlignHCenter)
         
         self.typeSetting = QtWidgets.QComboBox()
-        self.typeSetting.addItems(ABBREVLIST)
+        self.typeSetting.addItems(en.ABBREVLIST)
         self.typeSetting.setCurrentIndex(0)
         grid.addWidget(self.typeSetting,1,0)
         
@@ -472,7 +441,7 @@ class addIsotopeWindow(QtWidgets.QDialog):
         self.deleteLater()
 
     def applyAndClose(self):
-        self.Isotope = ABBREVLIST[self.typeSetting.currentIndex()]
+        self.Isotope = en.ABBREVLIST[self.typeSetting.currentIndex()]
         self.Shift = safeEval(self.shiftSetting.text())
         self.Multi = self.multiSettings.value()
         
@@ -685,8 +654,8 @@ class MainProgram(QtWidgets.QMainWindow):
         self.settingsFrame.ApplySettings()
         
     def SetRefFreq(self):
-        index = ABBREVLIST.index(self.RefNucleus)
-        self.RefFreq = freqRatioList[index] * GAMMASCALE * 1e6 * self.B0
+        index = en.ABBREVLIST.index(self.RefNucleus)
+        self.RefFreq = en.FREQRATIOLIST[index] * en.GAMMASCALE * 1e6 * self.B0
 
     def saveFigure(self):
         f = QtWidgets.QFileDialog.getSaveFileName(self, 'Save File', 'Spectrum.png' ,filter = '(*.png)')
@@ -726,8 +695,8 @@ class MainProgram(QtWidgets.QMainWindow):
     def sim(self,ResetXAxis = False, ResetYAxis = False, recalc = True):
         if len(self.SpinList) > 0:
             if recalc:
-                fullSpinList, FullJmatrix, Scaling = en.expandSpinsys(self.SpinList,self.Jmatrix)
-                self.Freq, self.Int = en.getFreqInt(fullSpinList, FullJmatrix, Scaling, self.B0, self.RefFreq, self.StrongCoupling)
+                spinSysList = en.expandSpinsys(self.SpinList,self.Jmatrix)
+                self.Freq, self.Int = en.getFreqInt(spinSysList, self.B0, self.RefFreq, self.StrongCoupling)
             self.Spectrum, self.Axis, self.RefFreq = en.MakeSpectrum(self.Int, self.Freq, self.Limits, self.RefFreq, self.Lb, self.NumPoints)
         else:
             self.Axis = self.Limits

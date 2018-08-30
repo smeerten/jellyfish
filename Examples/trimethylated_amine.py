@@ -39,8 +39,8 @@ Jmatrix = np.array([[0, 0.43, 0.43, 144.8, 3.49, 3.49, 0.75],
                     [0 , 0, 0, 0, 0, 0, 0],
                     [0, 0, 0, 0, 0, 0, 0]])
 
-fullSpinList, FullJmatrix, Scaling = en.expandSpinsys(SpinList,Jmatrix)
-Freq, Int = en.getFreqInt(fullSpinList, FullJmatrix, Scaling, B0, RefFreq, StrongCoupling)
+spinSysList = en.expandSpinsys(SpinList,Jmatrix)
+Freq, Int = en.getFreqInt(spinSysList, B0, RefFreq, StrongCoupling)
 
 Spectrum, Axis, RefFreq = en.MakeSpectrum(Int, Freq, Limits, RefFreq,Lb,NumPoints)
 en.saveMatlabFile(Spectrum,Limits,RefFreq,Axis,'trimethyl.mat')
