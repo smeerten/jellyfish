@@ -23,11 +23,6 @@ import numpy as np
 import time
 from itertools import product, permutations
 import sys
-#try: #If numba exists, use jit, otherwise make a mock decorator
-#    from numba import jit
-#except:
-#    def jit(func):
-#        return func
 
 GAMMASCALE = 42.577469 / 100
 isoPath = os.path.dirname(os.path.realpath(__file__)) + os.path.sep + "IsotopeProperties"
@@ -38,17 +33,15 @@ else:
     with open(isoPath, encoding = 'UTF-8') as isoFile:
         isoList = [line.strip().split('\t') for line in isoFile]
 isoList = isoList[1:]
-N = len(isoList)
 ABBREVLIST = []
-SPINLIST = np.zeros(N)
-FREQRATIOLIST = np.zeros(N)
+SPINLIST = []
+FREQRATIOLIST = []
 
-for i in range(N):
-    isoN = isoList[i]
+for isoN in isoList:
     if isoN[3] != '-' and isoN[4] != '-' and isoN[8] != '-':
         ABBREVLIST.append( str(int(isoN[3])) + isoN[1])
-        SPINLIST[i] = isoN[4]
-        FREQRATIOLIST[i] = isoN[8]
+        SPINLIST.append(float(isoN[4]))
+        FREQRATIOLIST.append(float(isoN[8]))
 
 class spinCls:
     """Class that holds a single spin
@@ -73,10 +66,15 @@ class spinCls:
 
     def __eq__(self,other):
         if isinstance(other,spinCls):
-            if self.index == other.index and self.I == other.I and self.shift == other.shift and self.Detect == other.Detect:
-                return True
-            else:
+            if self.index != other.index:
                 return False
+            if self.I != other.I:
+                return False
+            if self.shift != other.shift:
+                return False
+            if self.Detect != other.Detect:
+                return False
+            return True
         else:
             return NotImplemented
 
@@ -213,6 +211,40 @@ class spinSystemCls:
         self.HighOrder = HighOrder
         self.Scaling = Scaling
         self.MatrixSize = self.__GetMatrixSize()
+
+    def __eq__(self,other):
+        #Ordering of the spins is not considered (as it is of no relevance)
+        if isinstance(other,spinSystemCls):
+            if self.nSpins != other.nSpins:
+                return False
+
+            if self.MatrixSize != other.MatrixSize:
+                return False
+
+            if self.HighOrder != other.HighOrder:
+                return False
+
+            #Every spin must have at least one identical mate in other
+            spinEqual = [] #A list of list that holds the == of ech spin against otherSpin
+            for spin in self.SpinList:
+                spinEqual.append([spin == spin2 for spin2 in other.SpinList])
+
+            if not all([any(x) for x in spinEqual]): #All spins must have at least 1 equal in other
+                return False
+            
+            for x in permutations(range(self.nSpins)): #Try all possible orderings of the spins
+                #permutation is only valid if all the spins are at a True position in the spinEqual listlist
+                bl = all([spinEqual[val][pos] for pos, val in enumerate(x)])
+                if bl: #If all spins equal, rebuild the Jmatrix, and see if this is also a match
+                    jtmp = np.triu(np.array(self.Jmatrix))
+                    jtmp = jtmp + np.transpose(jtmp)
+                    jtmp = jtmp[x,:]
+                    jtmp = jtmp[:,x]
+                    if np.allclose(np.triu(jtmp),other.Jmatrix):
+                        return True
+            return False
+        else:
+            return NotImplemented
 
     def prepare(self):
         # Calc the more involved elements. 
@@ -527,42 +559,18 @@ def getIsolateSys(spinList, Jmatrix):
         isoSpins.append([spinTemp,Jtemp])
     return isoSpins
 
-def compareSpinsys(spinSys1,spinSys2):
-    #    self.SpinList = SpinList
-    #    self.nSpins = len(self.SpinList)
-    #    self.Jmatrix = np.array(Jmatrix)
-    #    self.HighOrder = HighOrder
-    #    self.Scaling = Scaling
-    #    self.MatrixSize = self.__GetMatrixSize()
-    if spinSys1.nSpins != spinSys2.nSpins:
-        return False
-
-    if spinSys1.MatrixSize != spinSys2.MatrixSize:
-        return False
-
-    if spinSys1.HighOrder != spinSys2.HighOrder:
-        return False
-
-    for x in permutations(range(spinSys1.nSpins)):
-        bl = all([spinSys1.SpinList[val] == spinSys2.SpinList[pos] for pos, val in enumerate(x)])
-        if bl:
-            jtmp = np.triu(np.array(spinSys1.Jmatrix))
-            jtmp = jtmp + np.transpose(jtmp)
-            jtmp = jtmp[x,:]
-            jtmp = jtmp[:,x]
-            if np.allclose(np.triu(jtmp),spinSys2.Jmatrix):
-                return True
-
-    return False
-
 def reduceSpinSys(spinSysList):
+    """Remove identical spinsystems from the list
+       Spin order is not considered when comparing spinsystems
+       If duplicate is found, its scaling (intensity) is added to the relevant unique spinsys
+    """
     uniqueSys = []
     for elem in spinSysList:
-        check = [compareSpinsys(elem,elem2) for elem2 in uniqueSys]
-        if not any(check):
-            uniqueSys.append(elem)
+        check = [elem == elem2 for elem2 in uniqueSys]
+        if any(check): #if not new, add intensity to the duplicate
+            uniqueSys[check.index(True)].Scaling += elem.Scaling
         else:
-            uniqueSys[np.where(check)[0][0]].Scaling += elem.Scaling
+            uniqueSys.append(elem)
     return uniqueSys
 
 def expandSpinsys(spinList,Jmatrix):
@@ -574,8 +582,8 @@ def expandSpinsys(spinList,Jmatrix):
     for elem in isoSys:
         spinSysList = spinSysList + performCPM(elem[0],elem[1])
 
+    #remove duplicates
     spinSysList = reduceSpinSys(spinSysList)
-    print('total',len(spinSysList))
     return spinSysList
 
 def getFreqInt(spinSysList, B0, RefFreq, StrongCoupling = True):

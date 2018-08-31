@@ -38,12 +38,15 @@ else:
     matplotlib.use('Qt5Agg')
     from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-import matplotlib.pyplot as plt
 from spectrumFrame import Plot1DFrame
-from safeEval import safeEval
-import time
 import engine as en
 NSTEPS = 1000
+
+def safeEval(inp, length=None):
+    try:
+        return eval(inp)
+    except Exception:
+        return None
 
 class PlotFrame(Plot1DFrame):
 
