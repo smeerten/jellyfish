@@ -699,7 +699,7 @@ class MainProgram(QtWidgets.QMainWindow):
         if len(self.SpinList) > 0:
             if recalc:
                 spinSysList = en.expandSpinsys(self.SpinList,self.Jmatrix)
-                self.Freq, self.Int = en.getFreqInt(spinSysList, self.B0, self.RefFreq, self.StrongCoupling)
+                self.Freq, self.Int = en.getFreqInt(spinSysList, self.B0, self.StrongCoupling)
             self.Spectrum, self.Axis, self.RefFreq = en.MakeSpectrum(self.Int, self.Freq, self.Limits, self.RefFreq, self.Lb, self.NumPoints)
         else:
             self.Axis = self.Limits

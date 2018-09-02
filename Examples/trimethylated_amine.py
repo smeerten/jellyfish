@@ -40,7 +40,7 @@ Jmatrix = np.array([[0, 0.43, 0.43, 144.8, 3.49, 3.49, 0.75],
                     [0, 0, 0, 0, 0, 0, 0]])
 
 spinSysList = en.expandSpinsys(SpinList,Jmatrix)
-Freq, Int = en.getFreqInt(spinSysList, B0, RefFreq, StrongCoupling)
+Freq, Int = en.getFreqInt(spinSysList, B0, StrongCoupling)
 
 Spectrum, Axis, RefFreq = en.MakeSpectrum(Int, Freq, Limits, RefFreq,Lb,NumPoints)
 en.saveMatlabFile(Spectrum,Limits,RefFreq,Axis,'trimethyl.mat')

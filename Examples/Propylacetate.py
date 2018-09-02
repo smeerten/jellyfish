@@ -29,7 +29,7 @@ spinSysList = en.expandSpinsys(SpinList,Jmatrix)
 #High field
 RefFreq = 500e6
 B0 = RefFreq/Base
-Freq, Int = en.getFreqInt(spinSysList, B0, RefFreq, StrongCoupling)
+Freq, Int = en.getFreqInt(spinSysList, B0, StrongCoupling)
 Spectrum, Axis, RefFreq = en.MakeSpectrum(Int, Freq, Limits, RefFreq,Lb,NumPoints)
 en.saveMatlabFile(Spectrum,Limits,RefFreq,Axis,'propylacetate500.mat')
 

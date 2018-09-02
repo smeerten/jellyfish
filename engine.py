@@ -80,128 +80,11 @@ class spinCls:
 
 
 #==============================
-def bfs(Adj, start):
-    # Use breadth first search (BFS) for find connected elements
-    seen = set()
-    nextlevel = {start}
-    Connect = []
-    while nextlevel:
-        thislevel = nextlevel
-        nextlevel = set()
-        for v in thislevel:
-            if v not in seen:
-                Connect.append(v)
-                seen.add(v)
-                nextlevel.update(Adj[v,:])
-    return Connect
-
-def GetFreqInt(spinSys, B0, RefFreq):
-
-    BlocksDiag, BlocksT = MakeH(spinSys, B0)
-
-    Inten, Freq = findFreqInt(spinSys, BlocksT, BlocksDiag, RefFreq)
-
-    return Inten, Freq
-
-def MakeH(spinSys, B0):
-    #Make shift and J
-    DiagLine = spinSys.HShift * B0 + spinSys.HJz
-    BlocksDiag = []
-    BlocksT = []
-    for x, Pos in enumerate(spinSys.Connect):
-        H = MakeSubH(spinSys,spinSys.Jconnect[x],Pos,DiagLine)
-        tmp1, tmp2 = np.linalg.eigh(H)
-        BlocksDiag.append(tmp1)
-        BlocksT.append(tmp2)
-
-    return BlocksDiag, BlocksT
-
-def MakeSubH(spinSys,Jconnect,Pos,DiagLine):
-    Dim = len(Pos)
-    if len(Pos) > 1:
-        Jpos = spinSys.JposList[Jconnect]
-        Jval = spinSys.JSize[Jconnect]
-        #Convert Jpos to new system
-        H = RebaseMatrix(Pos,Jpos,Jval,True)
-    else:
-        H = np.zeros((Dim,Dim))
-    H[range(Dim),range(Dim)] = DiagLine[Pos] #Add diagonal Shift + zpart of J
-    return H
-
-def RebaseMatrix(Pos,Jpos,Jval,makeH):
-    """ 
-       Makes a matrix (Hamiltonian) from an input list of off-diagonal elements
-       Pos: list with positions of the states in the full matrix should be SORTED
-       Jpos: Positions of the cross terms in the full matrix
-       Jval: values of these crossterms
-    """
-    Dim = len(Pos)
-    #Convert the state numbers to the new representation (i.e. 0,1,2,3...)
-    idx = np.searchsorted(Pos,Jpos)
-    to_values = np.arange(Dim)
-    out = to_values[idx] #Off diagonal term positions in new frame
-    if makeH:
-        #Make H
-        H = np.zeros((Dim,Dim))
-        H[out[:,1],out[:,0]] = Jval #Set off diagonal terms
-        #H[out[:,0],out[:,1]] = Jval #Positions are sorted, so this line should not be needed
-        return H
-    else:
-        return out
-
-def findFreqInt(spinSys, BlocksT, BlocksDiag, RefFreq):
-    Inten = np.array([])
-    Freq = np.array([])
-    for index, Rows in enumerate(spinSys.Connect):
-        RowPos = np.in1d(spinSys.DPos1, Rows)
-        RowNeed = np.where(RowPos)[0] #The elements where relevant row indices are
-        if len(RowNeed) == 0:
-            continue
-        Pos1tmp = spinSys.DPos1[RowNeed]
-        Pos2tmp = spinSys.DPos2[RowNeed]
-        RhoZeroTmp = spinSys.RhoZero[RowNeed]
-        DetectTmp = spinSys.Detect[RowNeed]
-        for index2, Cols in enumerate(spinSys.Connect):
-            #Make RhoZero and Detect for this element
-            ColPos = np.in1d(Pos2tmp, Cols)
-            Needed = np.where(ColPos)[0]
-            if len(Needed) == 0: #Skip if empty
-                continue
-            ColNeed = Pos2tmp[Needed]
-            RowNeed = Pos1tmp[Needed]
-            RhoElem = RhoZeroTmp[Needed]
-            DetectElem = DetectTmp[Needed]
-
-            ##Convert to new system
-            ColOut = RebaseMatrix(Cols,ColNeed,None,False)
-            RowOut = RebaseMatrix(Rows,RowNeed,None,False)
-            #Make Matrix
-            DetectMat = np.zeros((len(Rows),len(Cols)))
-            DetectMat[RowOut,ColOut] = DetectElem
-            RhoZeroMat = np.zeros((len(Rows),len(Cols)))
-            RhoZeroMat[RowOut,ColOut] = RhoElem
-
-            #Transform to detection frame
-            #Equal to: np.dot(np.transpose(a),np.dot(b,a))
-            DetectMat = np.einsum('ij,jk',np.transpose(BlocksT[index]),np.einsum('ij,jk',DetectMat,BlocksT[index2]))
-            RhoZeroMat = np.einsum('ij,jk',np.transpose(BlocksT[index]),np.einsum('ij,jk',RhoZeroMat,BlocksT[index2]))
-
-            #Get intensity and frequency of relevant elements
-            DetectMat = DetectMat * RhoZeroMat
-            Pos = np.where(DetectMat > 1e-9) 
-            Inten = np.append(Inten, DetectMat[Pos].flatten())
-            tmp2 = BlocksDiag[index][Pos[0]] - BlocksDiag[index2][Pos[1]]
-            Freq = np.append(Freq, np.abs(tmp2) - np.abs(RefFreq))
-
-    return  Freq, Inten * spinSys.Scaling
-
-#===============================
 
 class spinSystemCls:
     """ Class that holds a single spinsystem
-        The init calculates all the B0 independent parameters. This way, the class can be reused to 
-        simulate that same spinsys at multiple fields.
-        The heavy calcualtions are in the 'prepare' function. Splitting this from the init
+        The init sets all the properties of the spinsys. Calculation of the more `expensive'
+        parts is done in 'prepare'. Splitting this from the init
         allows for comparison of spinSystemCls instances before these calculations.
     """
     def __init__(self, SpinList, Jmatrix, Scaling = 1, HighOrder = True):
@@ -225,7 +108,7 @@ class spinSystemCls:
                 return False
 
             #Every spin must have at least one identical mate in other
-            spinEqual = [] #A list of list that holds the == of ech spin against otherSpin
+            spinEqual = [] #A list of list that holds the == of each spin against otherSpin
             for spin in self.SpinList:
                 spinEqual.append([spin == spin2 for spin2 in other.SpinList])
 
@@ -237,7 +120,7 @@ class spinSystemCls:
                 bl = all([spinEqual[val][pos] for pos, val in enumerate(x)])
                 if bl: #If all spins equal, rebuild the Jmatrix, and see if this is also a match
                     jtmp = np.triu(np.array(self.Jmatrix))
-                    jtmp = jtmp + np.transpose(jtmp)
+                    jtmp = jtmp + np.transpose(jtmp) #add transpose, as cutting J in parts might lead to a flip (i.e. ordering might be lost)
                     jtmp = jtmp[x,:]
                     jtmp = jtmp[:,x]
                     if np.allclose(np.triu(jtmp),other.Jmatrix):
@@ -249,6 +132,7 @@ class spinSystemCls:
     def prepare(self):
         # Calc the more involved elements. 
         self.IzList = self.__GetIz()
+        #self.TotalSpin = np.sum(self.IzList,0) #For total spin factorization
         self.IpList = self.__GetIplus()
         self.Detect, self.RhoZero, self.DPos1, self.DPos2 = self.__MakeDetectRho()
         self.HShift, self.HJz, self.Connect, self.Jconnect, self.JposList, self.JSize = self.__prepareH()
@@ -285,7 +169,6 @@ class spinSystemCls:
         """ Makes the shift Hamiltonian
             Output is an array with self.MatrixSize which is the diagonal of the Hshift matrix
             (only diagonal is populated).
-
         """
         HShift = np.zeros(self.MatrixSize)
         for spin in range(self.nSpins):
@@ -314,7 +197,6 @@ class spinSystemCls:
         Pos2 = np.array([])
         for spin in range(self.nSpins):
             #Make single spin operator when needed. Only Ix needs to be saved temporarily, as it is used twice 
-
             Line, Order =  self.__MakeSingleIx(spin)
             Lines = np.append(Lines,Line)
             Pos1 = np.append(Pos1,np.arange(len(Line)))
@@ -331,7 +213,6 @@ class spinSystemCls:
         Pos2 = Pos2[UsedElem]
         Detect = Detect[UsedElem]
         RhoZero = Lines  
-
         return Detect, RhoZero, Pos1, Pos2 
 
     def __MakeIpSm(self,spin,subspin):
@@ -368,16 +249,13 @@ class spinSystemCls:
 
     def __MakeSingleIx(self,spin):
         """ Returns Ix and the order of the diagonal were it should be placed
-            Used the fact that Ix = 0.5 * (Iplus + Iminus). As Iminus is in the lower 
+            Uses the fact that Ix = 0.5 * (Iplus + Iminus). As Iminus is in the lower 
             diagonals, it is not needed. So Ix = 0.5 * Iplus
             The order of the diagonal is equal to the total length of the spins that comes
             after the current spin.
-
         """
         afterlength = np.prod([1] + [i.Length for i in self.SpinList[spin + 1:]])
-
         Ix = 0.5 * self.IpList[spin][:-afterlength]
-
         #Afterlength is order of diagonal
         return Ix, afterlength
 
@@ -389,9 +267,6 @@ class spinSystemCls:
         
     def __GetMatrixSize(self):
         return np.prod([1] + [i.Length for i in self.SpinList])
-
-
-
 
     def __getConnections(self,Lines,Orders):
         JSizeList =  np.array([])
@@ -447,14 +322,123 @@ class spinSystemCls:
         #JSizeList: coupling values of 'Positions'
         return Connect, Jconnect, Positions, JSizeList
 
-        
+#============================================================
+
+def bfs(Adj, start):
+    # Use breadth first search (BFS) for find connected elements
+    seen = set()
+    nextlevel = {start}
+    Connect = []
+    while nextlevel:
+        thislevel = nextlevel
+        nextlevel = set()
+        for v in thislevel:
+            if v not in seen:
+                Connect.append(v)
+                seen.add(v)
+                nextlevel.update(Adj[v,:])
+    return Connect
+
+def MakeH(spinSys, B0):
+    #Make shift and J
+    DiagLine = spinSys.HShift * B0 + spinSys.HJz
+    BlocksDiag = []
+    BlocksT = []
+    for x, Pos in enumerate(spinSys.Connect):
+        H = MakeSubH(spinSys,spinSys.Jconnect[x],Pos,DiagLine)
+        tmp1, tmp2 = np.linalg.eigh(H)
+        BlocksDiag.append(tmp1)
+        BlocksT.append(tmp2)
+
+    return BlocksDiag, BlocksT
+
+def MakeSubH(spinSys,Jconnect,Pos,DiagLine):
+    Dim = len(Pos)
+    if len(Pos) > 1:
+        Jpos = spinSys.JposList[Jconnect]
+        Jval = spinSys.JSize[Jconnect]
+        #Convert Jpos to new system
+        H = RebaseMatrix(Pos,Jpos,Jval,True)
+    else:
+        H = np.zeros((Dim,Dim))
+    H[range(Dim),range(Dim)] = DiagLine[Pos] #Add diagonal Shift + zpart of J
+    return H
+
+def RebaseMatrix(Pos,Jpos,Jval,makeH):
+    """ 
+       Makes a matrix (Hamiltonian) from an input list of off-diagonal elements
+       Pos: list with positions of the states in the full matrix should be SORTED
+       Jpos: Positions of the cross terms in the full matrix
+       Jval: values of these crossterms
+    """
+    Dim = len(Pos)
+    #Convert the state numbers to the new representation (i.e. 0,1,2,3...)
+    idx = np.searchsorted(Pos,Jpos)
+    to_values = np.arange(Dim)
+    out = to_values[idx] #Off diagonal term positions in new frame
+    if makeH:
+        #Make H
+        H = np.zeros((Dim,Dim))
+        H[out[:,1],out[:,0]] = Jval #Set off diagonal terms
+        #H[out[:,0],out[:,1]] = Jval #Positions are sorted, so this line should not be needed
+        return H
+    else:
+        return out
+
+def findFreqInt(spinSys, BlocksT, BlocksDiag):
+    Inten = np.array([])
+    Freq = np.array([])
+    for index, Rows in enumerate(spinSys.Connect):
+        RowPos = np.in1d(spinSys.DPos1, Rows)
+        RowNeed = np.where(RowPos)[0] #The elements where relevant row indices are
+        if len(RowNeed) == 0:
+            continue
+        Pos1tmp = spinSys.DPos1[RowNeed]
+        Pos2tmp = spinSys.DPos2[RowNeed]
+        RhoZeroTmp = spinSys.RhoZero[RowNeed]
+        DetectTmp = spinSys.Detect[RowNeed]
+        for index2, Cols in enumerate(spinSys.Connect):
+            #Make RhoZero and Detect for this element
+            ColPos = np.in1d(Pos2tmp, Cols)
+            Needed = np.where(ColPos)[0]
+            if len(Needed) == 0: #Skip if empty
+                continue
+            ColNeed = Pos2tmp[Needed]
+            RowNeed = Pos1tmp[Needed]
+            RhoElem = RhoZeroTmp[Needed]
+            DetectElem = DetectTmp[Needed]
+
+            ##Convert to new system
+            ColOut = RebaseMatrix(Cols,ColNeed,None,False)
+            RowOut = RebaseMatrix(Rows,RowNeed,None,False)
+            #Make Matrix
+            DetectMat = np.zeros((len(Rows),len(Cols)))
+            DetectMat[RowOut,ColOut] = DetectElem
+            RhoZeroMat = np.zeros((len(Rows),len(Cols)))
+            RhoZeroMat[RowOut,ColOut] = RhoElem
+
+            #Transform to detection frame
+            #Equal to: np.dot(np.transpose(a),np.dot(b,a))
+            DetectMat = np.einsum('ij,jk',np.transpose(BlocksT[index]),np.einsum('ij,jk',DetectMat,BlocksT[index2]))
+            RhoZeroMat = np.einsum('ij,jk',np.transpose(BlocksT[index]),np.einsum('ij,jk',RhoZeroMat,BlocksT[index2]))
+
+            #Get intensity and frequency of relevant elements
+            DetectMat = DetectMat * RhoZeroMat
+            Pos = np.where(DetectMat > 1e-9) 
+            Inten = np.append(Inten, DetectMat[Pos].flatten())
+            tmp2 = BlocksDiag[index][Pos[0]] - BlocksDiag[index2][Pos[1]]
+            Freq = np.append(Freq, np.abs(tmp2))
+    return  Freq, Inten * spinSys.Scaling
+
+#===============================
+
 def MakeSpectrum(Intensities, Frequencies, AxisLimits, RefFreq,LineBroadening,NumPoints):
     Limits = tuple(AxisLimits * RefFreq * 1e-6)
     sw = Limits[1] - Limits[0]
     dw = 1.0/ sw
     lb = LineBroadening * np.pi
     #Make spectrum
-    Spectrum, Axis = np.histogram(Frequencies, int(NumPoints), Limits , weights = Intensities)
+    Spectrum, Axis = np.histogram(Frequencies - abs(RefFreq), int(NumPoints), Limits , weights = Intensities)
     if np.sum(np.isnan(Spectrum)):
         Spectrum = np.zeros_like(Axis)
     elif np.max(Spectrum) == 0.0:
@@ -554,9 +538,11 @@ def getIsolateSys(spinList, Jmatrix):
     isoSpins = []
     for con in Connect:
         spinTemp = [spinList[x] for x in con]
-        Jtemp = Jmatrix[con,:]
-        Jtemp = Jtemp[:,con]
-        isoSpins.append([spinTemp,Jtemp])
+        jtmp = np.triu(Jmatrix)
+        jtmp = jtmp + np.transpose(jtmp)
+        jtmp = jtmp[con,:]
+        jtmp = jtmp[:,con]
+        isoSpins.append([spinTemp,np.triu(jtmp)])
     return isoSpins
 
 def reduceSpinSys(spinSysList):
@@ -591,10 +577,11 @@ def getFreqInt(spinSysList, B0, RefFreq, StrongCoupling = True):
     Int = np.array([])
 
     for spinSys in spinSysList:
-       spinSys.prepare()
-       Ftmp, Itmp = GetFreqInt(spinSys, B0, RefFreq)
-       Freq = np.append(Freq, Ftmp)
-       Int = np.append(Int, Itmp)
+        spinSys.prepare()
+        BlocksDiag, BlocksT = MakeH(spinSys, B0)
+        Ftmp, Itmp = findFreqInt(spinSys, BlocksT, BlocksDiag)
+        Freq = np.append(Freq, Ftmp)
+        Int = np.append(Int, Itmp)
     return Freq, Int
 
 def saveSimpsonFile(data,limits,ref,location):
