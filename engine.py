@@ -129,13 +129,15 @@ class spinSystemCls:
         else:
             return NotImplemented
 
-    def prepare(self):
+    def prepare(self,TimeDict):
         # Calc the more involved elements. 
         self.IzList = self.__GetIz()
         #self.TotalSpin = np.sum(self.IzList,0) #For total spin factorization
         self.IpList = self.__GetIplus()
         self.Detect, self.RhoZero, self.DPos1, self.DPos2 = self.__MakeDetectRho()
+        tmpTime = time.time()
         self.HShift, self.HJz, self.Connect, self.Jconnect, self.JposList, self.JSize = self.__prepareH()
+        TimeDict['connect'] += time.time() - tmpTime
 
     def __GetIz(self):
         IzList = np.zeros((self.nSpins,self.MatrixSize))
@@ -339,14 +341,16 @@ def bfs(Adj, start):
                 nextlevel.update(Adj[v,:])
     return Connect
 
-def MakeH(spinSys, B0):
+def MakeH(spinSys, B0, TimeDict):
     #Make shift and J
     DiagLine = spinSys.HShift * B0 + spinSys.HJz
     BlocksDiag = []
     BlocksT = []
     for x, Pos in enumerate(spinSys.Connect):
         H = MakeSubH(spinSys,spinSys.Jconnect[x],Pos,DiagLine)
+        tmpTime = time.time()
         tmp1, tmp2 = np.linalg.eigh(H)
+        TimeDict['eig'] += time.time() - tmpTime
         BlocksDiag.append(tmp1)
         BlocksT.append(tmp2)
 
@@ -385,7 +389,7 @@ def RebaseMatrix(Pos,Jpos,Jval,makeH):
     else:
         return out
 
-def findFreqInt(spinSys, BlocksT, BlocksDiag):
+def findFreqInt(spinSys, BlocksT, BlocksDiag, TimeDict):
     Inten = np.array([])
     Freq = np.array([])
     for index, Rows in enumerate(spinSys.Connect):
@@ -419,8 +423,10 @@ def findFreqInt(spinSys, BlocksT, BlocksDiag):
 
             #Transform to detection frame
             #Equal to: np.dot(np.transpose(a),np.dot(b,a))
+            tmpTime = time.time()
             DetectMat = np.einsum('ij,jk',np.transpose(BlocksT[index]),np.einsum('ij,jk',DetectMat,BlocksT[index2]))
             RhoZeroMat = np.einsum('ij,jk',np.transpose(BlocksT[index]),np.einsum('ij,jk',RhoZeroMat,BlocksT[index2]))
+            TimeDict['dot'] += time.time() - tmpTime
 
             #Get intensity and frequency of relevant elements
             DetectMat = DetectMat * RhoZeroMat
@@ -575,13 +581,21 @@ def expandSpinsys(spinList,Jmatrix):
 def getFreqInt(spinSysList, B0, RefFreq, StrongCoupling = True):
     Freq = np.array([])
     Int = np.array([])
+    TimeDict = {'prepare':0, 'connect':0, 'MakeH':0 , 'eig':0, 'FreqInt': 0, 'dot':0 }
 
     for spinSys in spinSysList:
-        spinSys.prepare()
-        BlocksDiag, BlocksT = MakeH(spinSys, B0)
-        Ftmp, Itmp = findFreqInt(spinSys, BlocksT, BlocksDiag)
+        tmpTime = time.time()
+        spinSys.prepare(TimeDict)
+        TimeDict['prepare'] += time.time() - tmpTime
+        tmpTime = time.time()
+        BlocksDiag, BlocksT = MakeH(spinSys, B0, TimeDict)
+        TimeDict['MakeH'] += time.time() - tmpTime
+        tmpTime = time.time()
+        Ftmp, Itmp = findFreqInt(spinSys, BlocksT, BlocksDiag, TimeDict)
+        TimeDict['FreqInt'] += time.time() - tmpTime
         Freq = np.append(Freq, Ftmp)
         Int = np.append(Int, Itmp)
+    print(TimeDict)
     return Freq, Int
 
 def saveSimpsonFile(data,limits,ref,location):
