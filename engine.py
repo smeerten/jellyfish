@@ -194,7 +194,11 @@ class spinSystemCls:
 
     def __MakeDetectRho(self):
         Lines = np.array([])
-        Detect = np.array([])
+        DetectAll = all([spin.Detect for spin in self.SpinList])
+        if not DetectAll: #ID some spins are not detected, use slower routine
+            Detect = np.array([])
+        else: #Else, Rho and Detect are equal (with a factor), and only Rho is calculated and used
+            Detect = None
         Pos1 = np.array([])
         Pos2 = np.array([])
         for spin in range(self.nSpins):
@@ -203,17 +207,19 @@ class spinSystemCls:
             Lines = np.append(Lines,Line)
             Pos1 = np.append(Pos1,np.arange(len(Line)))
             Pos2 = np.append(Pos2,np.arange(len(Line)) + Order)
-            if self.SpinList[spin].Detect: #Add to detection
-                Detect = np.append(Detect,Line * 2)#Factor 2 because Iplus = 2 * Ix
-            else:
-                Detect = np.append(Detect,Line * 0)
+            if not DetectAll:
+                if self.SpinList[spin].Detect: #Add to detection
+                    Detect = np.append(Detect,Line * 2)#Factor 2 because Iplus = 2 * Ix
+                else:
+                    Detect = np.append(Detect,Line * 0)
 
         #Filter for zero elements
         UsedElem = np.where(Lines != 0.0)
         Lines = Lines[UsedElem]
         Pos1 = Pos1[UsedElem]
         Pos2 = Pos2[UsedElem]
-        Detect = Detect[UsedElem]
+        if not DetectAll:
+            Detect = Detect[UsedElem]
         RhoZero = Lines  
         return Detect, RhoZero, Pos1, Pos2 
 
@@ -400,7 +406,8 @@ def findFreqInt(spinSys, BlocksT, BlocksDiag, TimeDict):
         Pos1tmp = spinSys.DPos1[RowNeed]
         Pos2tmp = spinSys.DPos2[RowNeed]
         RhoZeroTmp = spinSys.RhoZero[RowNeed]
-        DetectTmp = spinSys.Detect[RowNeed]
+        if spinSys.Detect is not None:
+            DetectTmp = spinSys.Detect[RowNeed]
         for index2, Cols in enumerate(spinSys.Connect):
             #Make RhoZero and Detect for this element
             ColPos = np.in1d(Pos2tmp, Cols)
@@ -410,28 +417,32 @@ def findFreqInt(spinSys, BlocksT, BlocksDiag, TimeDict):
             ColNeed = Pos2tmp[Needed]
             RowNeed = Pos1tmp[Needed]
             RhoElem = RhoZeroTmp[Needed]
-            DetectElem = DetectTmp[Needed]
 
             ##Convert to new system
             ColOut = RebaseMatrix(Cols,ColNeed,None,False)
             RowOut = RebaseMatrix(Rows,RowNeed,None,False)
             #Make Matrix
-            DetectMat = np.zeros((len(Rows),len(Cols)))
-            DetectMat[RowOut,ColOut] = DetectElem
             RhoZeroMat = np.zeros((len(Rows),len(Cols)))
             RhoZeroMat[RowOut,ColOut] = RhoElem
 
             #Transform to detection frame
             #Equal to: np.dot(np.transpose(a),np.dot(b,a))
             tmpTime = time.time()
-            DetectMat = np.einsum('ij,jk',np.transpose(BlocksT[index]),np.einsum('ij,jk',DetectMat,BlocksT[index2]))
             RhoZeroMat = np.einsum('ij,jk',np.transpose(BlocksT[index]),np.einsum('ij,jk',RhoZeroMat,BlocksT[index2]))
             TimeDict['dot'] += time.time() - tmpTime
 
+            if spinSys.Detect is not None: #Only calc Detect if it is different from RhoZero
+                DetectElem = DetectTmp[Needed]
+                DetectMat = np.zeros((len(Rows),len(Cols)))
+                DetectMat[RowOut,ColOut] = DetectElem
+                DetectMat = np.einsum('ij,jk',np.transpose(BlocksT[index]),np.einsum('ij,jk',DetectMat,BlocksT[index2]))
+                RhoZeroMat = DetectMat * RhoZeroMat
+            else:
+                RhoZeroMat *= RhoZeroMat * 2 #Else Detect is equal to 2 * RhoZero
+
             #Get intensity and frequency of relevant elements
-            DetectMat = DetectMat * RhoZeroMat
-            Pos = np.where(DetectMat > 1e-9) 
-            Inten = np.append(Inten, DetectMat[Pos].flatten())
+            Pos = np.where(RhoZeroMat > 1e-9) 
+            Inten = np.append(Inten, RhoZeroMat[Pos].flatten())
             tmp2 = BlocksDiag[index][Pos[0]] - BlocksDiag[index2][Pos[1]]
             Freq = np.append(Freq, np.abs(tmp2))
     return  Freq, Inten * spinSys.Scaling

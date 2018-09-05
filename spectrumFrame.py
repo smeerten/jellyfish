@@ -20,10 +20,10 @@
 import numpy as np
 import matplotlib.gridspec as gridspec
 try:
+    from PyQt5 import QtGui, QtCore, QtWidgets
+except ImportError:
     from PyQt4 import QtGui, QtCore
     from PyQt4 import QtGui as QtWidgets    
-except ImportError:
-    from PyQt5 import QtGui, QtCore, QtWidgets
 
 #########################################################################################################
 # the class from which the 1d data is displayed, the operations which only edit the content of this class are for previewing

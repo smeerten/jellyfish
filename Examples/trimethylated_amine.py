@@ -2,6 +2,7 @@ import numpy as np
 import sys
 sys.path.append("..")
 import engine as en
+import time
 """
 Example from:
 
@@ -26,10 +27,10 @@ SpinList = []
 SpinList.append(['1H',0,3,True])
 SpinList.append(['1H',0,3,True])
 SpinList.append(['1H',0,3,True])
-SpinList.append(['13C',0,1,False])
-SpinList.append(['13C',0,1,False])
-SpinList.append(['13C',0,1,False])
-SpinList.append(['15N',0,1,False])
+SpinList.append(['13C',0,1,True])
+SpinList.append(['13C',0,1,True])
+SpinList.append(['13C',0,1,True])
+SpinList.append(['15N',0,1,True])
 
 Jmatrix = np.array([[0, 0.43, 0.43, 144.8, 3.49, 3.49, 0.75],
                     [ 0, 0, 0.43, 3.49, 144.8 , 3.49, 0.75],
@@ -39,10 +40,14 @@ Jmatrix = np.array([[0, 0.43, 0.43, 144.8, 3.49, 3.49, 0.75],
                     [0 , 0, 0, 0, 0, 0, 0],
                     [0, 0, 0, 0, 0, 0, 0]])
 
+tmpTime = time.time()
 spinSysList = en.expandSpinsys(SpinList,Jmatrix)
 Freq, Int = en.getFreqInt(spinSysList, B0, StrongCoupling)
+print('Sim time', time.time() - tmpTime)
 
+tmpTime = time.time()
 Spectrum, Axis, RefFreq = en.MakeSpectrum(Int, Freq, Limits, RefFreq,Lb,NumPoints)
+print('Spectrum make time', time.time() - tmpTime)
 en.saveMatlabFile(Spectrum,Limits,RefFreq,Axis,'trimethyl.mat')
 
 
