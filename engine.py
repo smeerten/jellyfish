@@ -589,12 +589,13 @@ def expandSpinsys(spinList,Jmatrix):
     spinSysList = reduceSpinSys(spinSysList)
     return spinSysList
 
-def getFreqInt(spinSysList, B0, RefFreq, StrongCoupling = True):
+def getFreqInt(spinSysList, B0, StrongCoupling = True):
     Freq = np.array([])
     Int = np.array([])
     TimeDict = {'prepare':0, 'connect':0, 'MakeH':0 , 'eig':0, 'FreqInt': 0, 'dot':0 }
 
     for spinSys in spinSysList:
+        spinSys.HighOrder = StrongCoupling
         tmpTime = time.time()
         spinSys.prepare(TimeDict)
         TimeDict['prepare'] += time.time() - tmpTime
