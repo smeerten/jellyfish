@@ -35,8 +35,6 @@ SpinList.append(['1H',7,1,True])
 SpinList.append(['1H',8,1,True])
 SpinList.append(['1H',9,1,True])
 SpinList.append(['1H',10,1,True])
-SpinList.append(['1H',11,1,True])
-SpinList.append(['1H',12,1,True])
 
 Jmatrix = np.diag(np.ones(len(SpinList) - 1) * 10,1)
 

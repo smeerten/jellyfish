@@ -420,9 +420,9 @@ def findFreqInt(spinSys, BlocksT, BlocksDiag, TimeDict):
             continue
         Rows = spinSys.Connect[index]
         for index2 in range(index + 1, len((spinSys.Connect))):
-            #Only continue if totalspin between the two parts changes with +/-1 (only
-            #the can there be an Ix operator between them)
-            if abs(spinSys.TotalSpinConnect[index] - spinSys.TotalSpinConnect[index2]) != 1.0:
+            #Only continue if totalspin between the two parts changes with +1 (only
+            #the can there be an Iplus operator between them)
+            if spinSys.TotalSpinConnect[index] - spinSys.TotalSpinConnect[index2] != 1.0:
                 continue
             tmpTime = time.time()
             Cols = spinSys.Connect[index2]
