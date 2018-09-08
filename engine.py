@@ -132,11 +132,11 @@ class spinSystemCls:
     def prepare(self,TimeDict):
         # Calc the more involved elements. 
         self.IzList = self.__GetIz()
-        #self.TotalSpin = np.sum(self.IzList,0) #For total spin factorization
+        self.TotalSpin = np.sum(self.IzList,0) #For total spin factorization
         self.IpList = self.__GetIplus()
         self.Detect, self.RhoZero, self.DPos1, self.DPos2 = self.__MakeDetectRho()
         tmpTime = time.time()
-        self.HShift, self.HJz, self.Connect, self.Jconnect, self.JposList, self.JSize = self.__prepareH()
+        self.HShift, self.HJz, self.Connect, self.Jconnect, self.JposList, self.JSize, self.TotalSpinConnect = self.__prepareH()
         TimeDict['connect'] += time.time() - tmpTime
 
     def __GetIz(self):
@@ -164,8 +164,8 @@ class spinSystemCls:
         #Make the B0 independent Hamiltonian (i.e. HShift needs to be multiplied by B0)
         HShift = self.__MakeShiftH()
         HJz, Lines, Orders = self.__MakeJLines()
-        Connect, Jconnect, Jpos, JSize = self.__getConnections(Lines,Orders)
-        return HShift, HJz, Connect, Jconnect, Jpos, JSize
+        Connect, Jconnect, Jpos, JSize, TotalSpinConnect = self.__getConnections(Lines,Orders)
+        return HShift, HJz, Connect, Jconnect, Jpos, JSize, TotalSpinConnect
        
     def __MakeShiftH(self):
         """ Makes the shift Hamiltonian
@@ -319,16 +319,18 @@ class spinSystemCls:
 
         #Get, for all connected element, the specific Jcoupling positions
         Jconnect = []
+        TotalSpinConnect = []
         for x in Connect:
             tmp = Jpos[x,:]
             tmp = tmp[np.where(tmp != -1)]
             Jconnect.append(tmp)
-
+            TotalSpinConnect.append(self.TotalSpin[x[0]])
+        
         #Connect: List of list with all coupled elements
         #Jconnect: For each group, where are the coupling values in the list?
         #Positions: list of [state1,state2] indexes
         #JSizeList: coupling values of 'Positions'
-        return Connect, Jconnect, Positions, JSizeList
+        return Connect, Jconnect, Positions, JSizeList, TotalSpinConnect
 
 #============================================================
 
@@ -398,25 +400,39 @@ def RebaseMatrix(Pos,Jpos,Jval,makeH):
 def findFreqInt(spinSys, BlocksT, BlocksDiag, TimeDict):
     Inten = np.array([])
     Freq = np.array([])
-    for index, Rows in enumerate(spinSys.Connect):
+
+    pos1Needed = []
+    pos2Needed = []
+    rhoNeeded = []
+    detectNeeded = []
+    tmpTime = time.time()
+    for Rows in (spinSys.Connect):
         RowPos = np.in1d(spinSys.DPos1, Rows)
-        RowNeed = np.where(RowPos)[0] #The elements where relevant row indices are
-        if len(RowNeed) == 0:
-            continue
-        Pos1tmp = spinSys.DPos1[RowNeed]
-        Pos2tmp = spinSys.DPos2[RowNeed]
-        RhoZeroTmp = spinSys.RhoZero[RowNeed]
+        pos1Needed.append(spinSys.DPos1[RowPos])
+        pos2Needed.append(spinSys.DPos2[RowPos])
+        rhoNeeded.append(spinSys.RhoZero[RowPos])
         if spinSys.Detect is not None:
-            DetectTmp = spinSys.Detect[RowNeed]
-        for index2, Cols in enumerate(spinSys.Connect):
-            #Make RhoZero and Detect for this element
-            ColPos = np.in1d(Pos2tmp, Cols)
-            Needed = np.where(ColPos)[0]
-            if len(Needed) == 0: #Skip if empty
+            detectNeeded.append(spinSys.Detect[RowPos])
+    TimeDict['intPrepare'] += time.time() - tmpTime
+
+    for index in range(len(spinSys.Connect)):
+        if len(pos1Needed[index]) == 0:
+            continue
+        Rows = spinSys.Connect[index]
+        for index2 in range(index + 1, len((spinSys.Connect))):
+            #Only continue if totalspin between the two parts changes with +/-1 (only
+            #the can there be an Ix operator between them)
+            if abs(spinSys.TotalSpinConnect[index] - spinSys.TotalSpinConnect[index2]) != 1.0:
                 continue
-            ColNeed = Pos2tmp[Needed]
-            RowNeed = Pos1tmp[Needed]
-            RhoElem = RhoZeroTmp[Needed]
+            tmpTime = time.time()
+            Cols = spinSys.Connect[index2]
+            #Make RhoZero and Detect for this element
+            ColPos = np.in1d(pos2Needed[index], Cols)
+            if not any(ColPos): #Skip if empty
+                continue
+            ColNeed = pos2Needed[index][ColPos]
+            RowNeed = pos1Needed[index][ColPos]
+            RhoElem = rhoNeeded[index][ColPos]
 
             ##Convert to new system
             ColOut = RebaseMatrix(Cols,ColNeed,None,False)
@@ -424,6 +440,7 @@ def findFreqInt(spinSys, BlocksT, BlocksDiag, TimeDict):
             #Make Matrix
             RhoZeroMat = np.zeros((len(Rows),len(Cols)))
             RhoZeroMat[RowOut,ColOut] = RhoElem
+            TimeDict['before'] += time.time() - tmpTime
 
             #Transform to detection frame
             #Equal to: np.dot(np.transpose(a),np.dot(b,a))
@@ -432,7 +449,7 @@ def findFreqInt(spinSys, BlocksT, BlocksDiag, TimeDict):
             TimeDict['dot'] += time.time() - tmpTime
 
             if spinSys.Detect is not None: #Only calc Detect if it is different from RhoZero
-                DetectElem = DetectTmp[Needed]
+                DetectElem = detectNeeded[index][ColPos]
                 DetectMat = np.zeros((len(Rows),len(Cols)))
                 DetectMat[RowOut,ColOut] = DetectElem
                 DetectMat = np.einsum('ij,jk',np.transpose(BlocksT[index]),np.einsum('ij,jk',DetectMat,BlocksT[index2]))
@@ -441,10 +458,12 @@ def findFreqInt(spinSys, BlocksT, BlocksDiag, TimeDict):
                 RhoZeroMat *= RhoZeroMat * 2 #Else Detect is equal to 2 * RhoZero
 
             #Get intensity and frequency of relevant elements
+            tmpTime = time.time()
             Pos = np.where(RhoZeroMat > 1e-9) 
             Inten = np.append(Inten, RhoZeroMat[Pos].flatten())
             tmp2 = BlocksDiag[index][Pos[0]] - BlocksDiag[index2][Pos[1]]
             Freq = np.append(Freq, np.abs(tmp2))
+            TimeDict['intenGet'] += time.time() - tmpTime
     return  Freq, Inten * spinSys.Scaling
 
 #===============================
@@ -592,7 +611,7 @@ def expandSpinsys(spinList,Jmatrix):
 def getFreqInt(spinSysList, B0, StrongCoupling = True):
     Freq = np.array([])
     Int = np.array([])
-    TimeDict = {'prepare':0, 'connect':0, 'MakeH':0 , 'eig':0, 'FreqInt': 0, 'dot':0 }
+    TimeDict = {'prepare':0, 'connect':0, 'MakeH':0 , 'eig':0, 'FreqInt': 0,'intPrepare':0, 'before':0,'intenGet':0, 'dot':0 }
 
     for spinSys in spinSysList:
         spinSys.HighOrder = StrongCoupling
