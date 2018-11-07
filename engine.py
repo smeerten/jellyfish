@@ -644,7 +644,7 @@ def saveSimpsonFile(data,limits,ref,location):
 
 def saveMatlabFile(data,limits,ref,axis,location):
     import scipy.io
-    freq = (limits[1] - limits[0])/2 * ref * 1e-6 + ref
+    freq = (limits[1] + limits[0])/2 * ref * 1e-6 + ref
     sw = (limits[1] - limits[0]) * ref * 1e-6
     struct = {}
     struct['dim'] = 1
@@ -653,7 +653,7 @@ def saveMatlabFile(data,limits,ref,axis,location):
     struct['freq'] = freq
     struct['sw'] = sw
     struct['spec'] = [True]
-    struct['wholeEcho'] = [False]
+    struct['wholeEcho'] = [True]
     struct['ref'] = np.array([ref], dtype=np.float)
     struct['history'] = []
 
