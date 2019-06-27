@@ -104,6 +104,11 @@ complicate J-coupling patterns. It features a graphical user interface for intui
 and a python library for advanced use. Jellyfish is written in the Python programming
 language, and is cross-platform and open-source (GPL3 licence).
 
+The Jellyfish graphical interface is aimed for teaching purposes, especially when it comes to
+demonstrating the influence of strong coupling effects on NMR spectra in the liquid state. The
+engine itself is quite fast, as several more advanced techniques for simulating J-coupling patterns
+are implemented. These are discussed in the technical mart of this manual. Note that Jellyfish
+calculations are exact: no approximations are made to reduce the calculation time.
 
 
 \section{Running Jellyfish}
@@ -247,7 +252,7 @@ Apart from running Jellyfish as a program via the user interface, it can also be
 from within python. This requires that you have the source code of Jellyfish (and not a compiled
 version). The `Examples' directory holds some examples on how to do simulations from a script. Below
 an easy example is given. Here, it is assumed that the Jellyfish main directory (which holds
-\texttt{engine.py} is one directory higher than this file.
+\texttt{engine.py}) is one directory higher than this file.
 
 \lstset{language=python} 
 \begin{lstlisting}[frame=single]  
@@ -286,7 +291,95 @@ Spectrum, Axis, RefFreq = en.MakeSpectrum(Int, Freq,
 en.saveMatlabFile(Spectrum,Limits,RefFreq,Axis,'easy.mat')
 \end{lstlisting}
 
+\section{Technical background}
+In the following, I will discussed the algorithms that are implemented in Jellyfish for
+the simulation of strong coupling patterns. This part is both a documentation, as well as
+a tutorial on how to approach these calculations. Any suggestions to improve the algorithm
+are appreciated.
 
+\subsection{Basics}
+In order to simulate a spectrum, we need to know which frequencies are present, and the
+amplitude of these frequencies. based on that, we can draw a spectrum directly (as a
+histogram), or simulate the FID (as a series of complex exponentials). Calculating the
+spectrum directly is much faster, and this is used in Jellyfish. This is accurate if the
+number of points is high enough.
+
+In order to calculate the energies, we need the Hamiltonian of the system. The total
+Hamiltonian is the Hamiltonian of all spins, including the Zeeman interaction (with the
+chemical shift) and the scalar coupling (J-coupling) interaction between all pairs of
+spins:
+\begin{equation}
+  \mathcal{H} = \sum_{i}{\mathcal{H}_{i}^\text{zee}} + \sum_{i}\sum_{s>i}{\mathcal{H}_{i,s}^\text{J}}
+\end{equation}
+Here, the double sum is only needed for a part of all pairs ([i,s] and [s,i] are equal,
+and [i,i] = 0).
+
+To get the energies of the transitions, we need to transform the Hamiltonian to a diagonal
+frame (i.e.\ gets its eigenvalues)\footnote{Note that I
+use the $\bullet$ symbol to represent a matrix multiplication, and a $\cdot$ for a
+point-wise multiplication.}:
+\begin{equation}
+  \mathcal{H}^\text{int} = T^{-1} \bullet \mathcal{H}\bullet T
+\end{equation}
+where the `int' superscript indicates we have gone to the interaction frame.  Here $T$
+represents the eigenfunction matrix, we we can use to transform the Hamiltonian to a new
+frame. $T^{-1}$ is the inverse of this matrix. In this representation, the energy of
+transition $i \rightarrow j$ is equal to $\mathcal{H}^\text{int}[i,i] -
+\mathcal{H}^\text{int}[j,j]$.
+
+Apart from the energy, we also need the transition probability, i.e.\ the intensity of the
+transient. This depends on two things: the start operator, and the detection operator. We
+use the following definitions:
+\begin{equation}
+  \rho_0 = I_x
+\end{equation}
+as a starting operator. And
+\begin{equation}
+  \text{Detect} = I_+
+\end{equation}
+To get the probability of a transition, we multiply these values in a point-wise fashion:
+$\rho_0 \cdot \text{Detect} = I_x  \cdot I_+$. However, we want this result to be defined
+in the interaction frame:
+\begin{equation}
+  P = (T^{-1} \bullet I_x \bullet T) \cdot (T^{-1} \bullet I_+\bullet T)
+\end{equation}
+Having calculated this, we can get the intensity of transition $i \rightarrow j$ as $P[i,j]$.
+
+\subsection{Strong coupling}
+Strong coupling is an effect which is relevant when the chemical shift
+difference between two spins is not much larger than the strength of the
+J-coupling. Spectra that are influenced by strong coupling effects are called
+`higher order' spectra. Within the J-coupling Hamiltonian, the strong coupling
+effects are contained in the $x$ and $y$ parts. The full Hamiltonian is:
+
+\begin{equation}
+  \mathcal{H}^\text{J} = \sum_{i}\sum_{s>i}{\mathcal{H}_{i,s}^\text{J}} = 
+  \sum_{i}\sum_{s>i}{J_{i,s}(I_x S_x + I_y S_y + I_z S_z)}
+\end{equation}
+If we take only the $I_z S_z$ part into account, we can calculate a spectrum
+without strong coupling effects. A better representation is therefore:
+\begin{equation}
+  \mathcal{H}^\text{J} = \mathcal{H}^\text{J}_\text{weak} +
+  \mathcal{H}^\text{J}_\text{strong}
+\end{equation}
+with:
+\begin{equation}
+  \mathcal{H}^\text{J}_\text{weak} = \sum_{i}\sum_{s>i}{J_{i,s}(I_z S_z)}
+\end{equation}
+ and
+\begin{equation}
+  \mathcal{H}^\text{J}_\text{strong} = \sum_{i}\sum_{s>i}{J_{i,s}(I_x S_x + I_y
+S_y)}
+  \quad.
+\end{equation}
+In Jellyfish, setting \texttt{strong coupling = False} makes sure only
+$\mathcal{H}^\text{J}_\text{weak}$ is calculated and used. 
+For later use, the alternative representation:
+\begin{equation}
+  \mathcal{H}^\text{J}_\text{strong} = \sum_{i}\sum_{s>i}{J_{i,s}(I_x S_x + I_y
+S_y)} = \sum_{i}\sum_{s>i}{J_{i,s}(I_+ S_- + I_- S_+)/2}
+\end{equation}
+is more convenient.
 \section{Contact}
 To contact the \texttt{Jellyfish} team write to \texttt{ssnake@science.ru.nl}.
 \bibliographystyle{BibStyle}
