@@ -175,36 +175,43 @@ class SpinsysFrame(QtWidgets.QWidget):
         self.father = parent
         self.Jmatrix = np.array([])
         self.grid = QtWidgets.QGridLayout(self)
-        self.grid.addWidget(QtWidgets.QLabel("Spin System:"), 0, 0,1,5,QtCore.Qt.AlignHCenter)
+        self.spinGroup = QtWidgets.QGroupBox('Spin System:')
+        self.spinFrame = QtWidgets.QGridLayout()
+        self.spinGroup.setLayout(self.spinFrame)
+        self.grid.addWidget(self.spinGroup, 0, 0, 1, 5)
 
         self.StrongToggle = QtWidgets.QCheckBox('Strong coupling')
         self.StrongToggle.setChecked(True)
         self.StrongToggle.stateChanged.connect(self.changeStrong)
 
-        self.grid.addWidget(self.StrongToggle,1,0,1,6)
+        self.spinFrame.addWidget(self.StrongToggle,1,0,1,6)
         self.addButton = QtWidgets.QPushButton("Add isotope")
         self.addButton.clicked.connect(self.addIsotopeManager)
 
-        self.grid.addWidget(self.addButton,2,0,1,6)
+        self.spinFrame.addWidget(self.addButton,2,0,1,6)
         
         self.setJButton = QtWidgets.QPushButton("Set J-couplings")
         self.setJButton.clicked.connect(self.setJManager)
-        self.grid.addWidget(self.setJButton,3,0,1,6)
+        self.spinFrame.addWidget(self.setJButton,3,0,1,6)
 
-        self.grid.addWidget(QtWidgets.QLabel("#:"), 5, 0,QtCore.Qt.AlignHCenter)
-        self.grid.addWidget(QtWidgets.QLabel("Type:"), 5, 1,QtCore.Qt.AlignHCenter)
-        self.grid.addWidget(QtWidgets.QLabel("Shift [ppm]:"), 5, 2,QtCore.Qt.AlignHCenter)
-        self.grid.addWidget(QtWidgets.QLabel("Multiplicity:"), 5, 3,QtCore.Qt.AlignHCenter)
-        self.grid.addWidget(QtWidgets.QLabel("Detect:"), 5, 4,QtCore.Qt.AlignHCenter)
-        self.grid.addWidget(QtWidgets.QLabel("Remove:"), 5, 5,QtCore.Qt.AlignHCenter)
+        self.spinFrame.addWidget(QtWidgets.QLabel("#:"), 5, 0,QtCore.Qt.AlignHCenter)
+        self.spinFrame.addWidget(QtWidgets.QLabel("Type:"), 5, 1,QtCore.Qt.AlignHCenter)
+        self.spinFrame.addWidget(QtWidgets.QLabel("Shift [ppm]:"), 5, 2,QtCore.Qt.AlignHCenter)
+        self.spinFrame.addWidget(QtWidgets.QLabel("Multiplicity:"), 5, 3,QtCore.Qt.AlignHCenter)
+        self.spinFrame.addWidget(QtWidgets.QLabel("Detect:"), 5, 4,QtCore.Qt.AlignHCenter)
+        self.spinFrame.addWidget(QtWidgets.QLabel("Remove:"), 5, 5,QtCore.Qt.AlignHCenter)
         self.spinSysWidgets = {'Number':[],'Isotope':[], 'Shift':[], 'Multi':[],'Detect':[], 'Remove':[]}
         self.sliderTypes = {'Type':[],'Spins':[]}
         self.sliderWidgets = {'Label':[],'Slider':[],'Remove':[]}
         self.Nspins = 0
         
+        self.sliderGroup = QtWidgets.QGroupBox('Sliders:')
+        self.sliderFrame = QtWidgets.QGridLayout()
+        self.sliderGroup.setLayout(self.sliderFrame)
         self.addSliderButton = QtWidgets.QPushButton("Add slider")
         self.addSliderButton.clicked.connect(self.addSliderManager)
-        self.grid.addWidget(self.addSliderButton,100,0,1,6)        
+        self.sliderFrame.addWidget(self.addSliderButton,100,0,1,6)        
+        self.grid.addWidget(self.sliderGroup, 1, 0, 1, 5)
         
         self.grid.setColumnStretch(200, 1)
         self.grid.setRowStretch(200, 1)
@@ -221,30 +228,30 @@ class SpinsysFrame(QtWidgets.QWidget):
         self.spinSysWidgets['Number'].append(QtWidgets.QLabel(str(self.Nspins)))
         self.spinSysWidgets['Isotope'].append(QtWidgets.QLabel(Isotope))
         
-        self.grid.addWidget(self.spinSysWidgets['Isotope'][-1],5 + self.Nspins,1)
-        self.grid.addWidget(self.spinSysWidgets['Number'][-1],5 + self.Nspins,0)
+        self.spinFrame.addWidget(self.spinSysWidgets['Isotope'][-1],5 + self.Nspins,1)
+        self.spinFrame.addWidget(self.spinSysWidgets['Number'][-1],5 + self.Nspins,0)
         
         self.spinSysWidgets['Shift'].append(QtWidgets.QLineEdit())
         self.spinSysWidgets['Shift'][-1].setAlignment(QtCore.Qt.AlignHCenter)
         self.spinSysWidgets['Shift'][-1].setText(str(Shift))
         self.spinSysWidgets['Shift'][-1].returnPressed.connect(self.parseSpinSys)
-        self.grid.addWidget(self.spinSysWidgets['Shift'][-1],5 + self.Nspins,2)
+        self.spinFrame.addWidget(self.spinSysWidgets['Shift'][-1],5 + self.Nspins,2)
         
         self.spinSysWidgets['Multi'].append(QtWidgets.QSpinBox())
         self.spinSysWidgets['Multi'][-1].setValue(Multiplicity)
         self.spinSysWidgets['Multi'][-1].setMinimum(1)
         self.spinSysWidgets['Multi'][-1].valueChanged.connect(lambda: self.parseSpinSys())
-        self.grid.addWidget(self.spinSysWidgets['Multi'][-1],5 + self.Nspins,3)
+        self.spinFrame.addWidget(self.spinSysWidgets['Multi'][-1],5 + self.Nspins,3)
         
         self.spinSysWidgets['Detect'].append(QtWidgets.QCheckBox())
         self.spinSysWidgets['Detect'][-1].setChecked(Detect)
         self.spinSysWidgets['Detect'][-1].stateChanged.connect(lambda: self.parseSpinSys())
-        self.grid.addWidget(self.spinSysWidgets['Detect'][-1],5 + self.Nspins,4)
+        self.spinFrame.addWidget(self.spinSysWidgets['Detect'][-1],5 + self.Nspins,4)
 
 
         self.spinSysWidgets['Remove'].append(QtWidgets.QPushButton("X"))
         self.spinSysWidgets['Remove'][-1].clicked.connect((lambda n: lambda: self.removeSpin(n))(self.Nspins))
-        self.grid.addWidget(self.spinSysWidgets['Remove'][-1],5 + self.Nspins,5)
+        self.spinFrame.addWidget(self.spinSysWidgets['Remove'][-1],5 + self.Nspins,5)
         
         temp = np.zeros((self.Nspins,self.Nspins))
         temp[:-1,:-1] = self.Jmatrix
@@ -304,9 +311,9 @@ class SpinsysFrame(QtWidgets.QWidget):
                     self.sliderTypes['Spins'].append([spin, spin2])
                     self.sliderTypes['Type'].append('J')
                     
-                self.grid.addWidget(self.sliderWidgets['Label'][-1],100 + num,0)
-                self.grid.addWidget(self.sliderWidgets['Slider'][-1],100 + num,1,1,3)
-                self.grid.addWidget(self.sliderWidgets['Remove'][-1],100 + num,4)
+                self.sliderFrame.addWidget(self.sliderWidgets['Label'][-1],100 + num,0)
+                self.sliderFrame.addWidget(self.sliderWidgets['Slider'][-1],100 + num,1,1,4)
+                self.sliderFrame.addWidget(self.sliderWidgets['Remove'][-1],100 + num,5)
                     
     def setB0(self,B0):
         self.father.setB0(float(B0)/NSTEPS)
@@ -625,6 +632,12 @@ class MainProgram(QtWidgets.QMainWindow):
         self.quitAct = self.filemenu.addAction('&Quit', self.fileQuit, QtGui.QKeySequence.Quit)
         self.quitAct.setToolTip('Close Jellyfish')
 
+        self.aboutmenu = QtWidgets.QMenu('About', self)
+        self.menubar.addMenu(self.aboutmenu)
+
+        self.manualAct = self.aboutmenu.addAction('Manual', self.openManual)
+        self.manualAct.setToolTip('Open Manual')
+
         self.fig = Figure()
         self.canvas = FigureCanvas(self.fig)
         self.ax = self.fig.gca()
@@ -651,6 +664,15 @@ class MainProgram(QtWidgets.QMainWindow):
         self.spinsysFrame = SpinsysFrame(self)
         self.mainFrame.addWidget(self.spinsysFrame, 0, 1,2,1)
         #self.sim()
+
+    def openManual(self):
+        file = os.path.dirname(os.path.realpath(__file__))  + os.path.sep + 'Documentation' + os.path.sep + 'Manual.pdf'
+        if sys.platform.startswith( 'linux' ):
+            os.system("xdg-open " + '"' + file + '"')
+        elif sys.platform.startswith( 'darwin' ):
+            os.system("open " + '"' + file + '"')
+        elif sys.platform.startswith( 'win' ):
+            os.startfile(file)
 
     def setB0(self,B0):
         self.settingsFrame.B0Setting.setText(str(B0))
