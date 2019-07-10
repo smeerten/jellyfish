@@ -21,9 +21,6 @@
 \usepackage[bitstream-charter]{mathdesign}
 \usepackage[T1]{fontenc}
 \usepackage[protrusion=true,expansion,tracking=true]{microtype}
-\pgfplotsset{compat=1.7,/pgf/number format/1000 sep={}, axis lines*=left,axis line style={gray},every outer x axis line/.append style={-stealth'},every outer y axis line/.append style={-stealth'},tick label style={font=\small},label style={font=\small},legend style={font=\footnotesize}}
-\usepackage{colortbl}
-\usepackage{listings}
 
 
 %Set section font
@@ -56,43 +53,28 @@
 \let\ps@plain\ps@empty
 \makeatother
 %----------------------
-\usepackage{blindtext, color}
-\definecolor{gray75}{gray}{0.75}
-\newcommand{\hsp}{\hspace{20pt}}
 
-
-
-\usepackage[hidelinks,colorlinks,allcolors=blue, pdftitle={Jellyfish manual},pdfauthor={W.M.J.\ Franssen}]{hyperref}
+\usepackage[hidelinks,colorlinks,allcolors=black, pdftitle={Jellyfish manual},pdfauthor={W.M.J.\ Franssen}]{hyperref}
 
 \interfootnotelinepenalty=10000 %prevents splitting of footnote over multiple pages
 \linespread{1.2}
 
-%\usepgfplotslibrary{external}%creates all external tikz images that are included.
-%\tikzexternalize[shell escape=-enable-write18]%activate externalization
-%\tikzsetexternalprefix{GeneratedFigures/}
-%\tikzset{external/force remake} %Enable forced remake
-
-
 
 \begin{document}
-%\newgeometry{left=72pt,right=72pt,top=95pt,bottom=95pt,footnotesep=0.5cm}
 \input{Title.tex}
 
 \thispagestyle{empty}
 \newpage
 \mbox{}
 
-%\restoregeometry
 
 \pagenumbering{roman}
-%\pagestyle{empty}
 \renewcommand\cfttoctitlefont{\color{black}\Huge\fontfamily{SourceSansPro-LF}\bfseries}
 \microtypesetup{protrusion=false} % disables protrusion locally in the document
 \setcounter{tocdepth}{2}
 \tableofcontents % prints Table of Contents
 \microtypesetup{protrusion=true} % enables protrusion
 \addtocontents{toc}{\protect\thispagestyle{empty}}
-%\pagestyle{plain}
 
 \renewcommand\cfttoctitlefont{\color{black!70}\Huge\fontfamily{SourceSansPro-LF}\bfseries}
 
@@ -299,7 +281,7 @@ are appreciated.
 
 \subsection{Basics}
 In order to simulate a spectrum, we need to know which frequencies are present, and the
-amplitude of these frequencies. based on that, we can draw a spectrum directly (as a
+amplitude of these frequencies. Based on that, we can draw a spectrum directly (as a
 histogram), or simulate the FID (as a series of complex exponentials). Calculating the
 spectrum directly is much faster, and this is used in Jellyfish. This is accurate if the
 number of points is high enough.
@@ -329,7 +311,9 @@ transition $i \rightarrow j$ is equal to $\mathcal{H}^\text{int}[i,i] -
 
 Apart from the energy, we also need the transition probability, i.e.\ the intensity of the
 transient. This depends on two things: the start operator, and the detection operator. We
-use the following definitions:
+use the following definitions\footnote{Note that I use $I_x$ to mean the Pauli matrix of
+  the $\hat{I}_x$ operator. I will do this throughout this manual. All operators are in
+their matrix form.}:
 \begin{equation}
   \rho_0 = I_x
 \end{equation}
@@ -345,44 +329,208 @@ in the interaction frame:
 \end{equation}
 Having calculated this, we can get the intensity of transition $i \rightarrow j$ as $P[i,j]$.
 
-\subsection{Strong coupling}
-Strong coupling is an effect which is relevant when the chemical shift
-difference between two spins is not much larger than the strength of the
-J-coupling. Spectra that are influenced by strong coupling effects are called
-`higher order' spectra. Within the J-coupling Hamiltonian, the strong coupling
-effects are contained in the $x$ and $y$ parts. The full Hamiltonian is:
+\subsection{Hamiltonians}
+The Zeeman Hamiltonian is (including Chemical shift effects):
+\begin{equation}
+  \mathcal{H}_\text{zee} = \sum_i B_0  \gamma_i (1 + \delta_i) I_z^i
+\end{equation}
+with $B_0$ the magnetic field strength in Tesla, $\gamma$ to gyromagnetic ratio of the
+nucleus of interest in Hz/T and $\delta$ the chemical shift.
 
+The scalar coupling Hamiltonian (J-coupling) is:
 \begin{equation}
   \mathcal{H}^\text{J} = \sum_{i}\sum_{s>i}{\mathcal{H}_{i,s}^\text{J}} = 
-  \sum_{i}\sum_{s>i}{J_{i,s}(I_x S_x + I_y S_y + I_z S_z)}
+  \sum_{i}\sum_{s>i}{J_{i,s}(I_x^i I_x^s + I_y^i I_y^s + I_z^i I_z^s)}
 \end{equation}
-If we take only the $I_z S_z$ part into account, we can calculate a spectrum
-without strong coupling effects. A better representation is therefore:
+with $J_{i,s}$ the scalar coupling value between nucleus $i$ and spin $s$.
+
+Often, this Hmailtonian is split in apart that commutes with the Zeeman term (i.e.\ the
+weak coupling part) and a part that doe snot commute: the strong coupling:
+
 \begin{equation}
   \mathcal{H}^\text{J} = \mathcal{H}^\text{J}_\text{weak} +
   \mathcal{H}^\text{J}_\text{strong}
 \end{equation}
 with:
 \begin{equation}
-  \mathcal{H}^\text{J}_\text{weak} = \sum_{i}\sum_{s>i}{J_{i,s}(I_z S_z)}
+  \mathcal{H}^\text{J}_\text{weak} = \sum_{i}\sum_{s>i}{J_{i,s}(I_z^i I_z^j)}
 \end{equation}
  and
 \begin{equation}
-  \mathcal{H}^\text{J}_\text{strong} = \sum_{i}\sum_{s>i}{J_{i,s}(I_x S_x + I_y
-S_y)}
+  \mathcal{H}^\text{J}_\text{strong} = \sum_{i}\sum_{s>i}{J_{i,s}(I_x^i I_x^s + I_y^i
+I_y^s)}
   \quad.
 \end{equation}
-In Jellyfish, setting \texttt{strong coupling = False} makes sure only
-$\mathcal{H}^\text{J}_\text{weak}$ is calculated and used. 
-For later use, the alternative representation:
+
+Jellyfish makes use of the fact that the full Hamiltonian is always Hermitian: the lower
+diagonals are the complex conjugate of the upper diagonals. Therefore, we construct a
+matrix with only the upper diagonals, which still leads to the correct eigenfunctions an
+eigenvalues using the \texttt{numpy} \texttt{eigh} routine. To demonstrate why this is of
+use, I will describe some equalities using the \texttt{triu} function. This function returns
+the matrix with only the diagonal, and upper diagonals retained.
+
+We can rewrite the equation for the strong J-coupling in a more convenient way:
 \begin{equation}
-  \mathcal{H}^\text{J}_\text{strong} = \sum_{i}\sum_{s>i}{J_{i,s}(I_x S_x + I_y
-S_y)} = \sum_{i}\sum_{s>i}{J_{i,s}(I_+ S_- + I_- S_+)/2}
+  \mathcal{H}^\text{J}_\text{strong} = \sum_{i}\sum_{s>i}{J_{i,s}(I_+^i I_-^s + I_-^i
+I_+^s)/2}
 \end{equation}
-is more convenient.
+We can then write:
+\begin{align}
+\text{triu}(\mathcal{H}^\text{J}_\text{strong}) =& \sum_{i}\sum_{s>i}{J_{i,s}(\text{triu}(I_+
+^i I_-^s) + \text{triu}(I_-^i I_+^s))/2} \\
+=& \sum_{i}\sum_{s>i}{J_{i,s}(I_+^i I_-^s )/2}
+\end{align}
+Here, we use the fact that $I_+^iI_-^S$ only has non-zero values on the upper diagonals,
+and $I_-^iI_+^S$ has no non-zero values on the upper diagonals. Naturally, this is faster
+to calculate than the full Hamiltonian.
+
+
+\subsection{Operator definitions}
+To set up the Hamiltonian, as well as the start and detect operator, we need several one
+and two spin operators to be defined. Above, I used $I$ to represent a spin operator. Note
+that, in the Hamiltonians described above, $I$ must stand for the spin operator defined in
+the full basis (i.e.\ taking all the spins into account). Below, I shall use $\mathfrak{I}$
+to represent a spin operator in its own basis. 
+
+In order to calculate, say, the $I_z^1$ operator (i.e.\ the $z$-operator of spin 1 in the
+full basis), we take the operator in its own basis ($\mathfrak{I}_z^1$) and use the
+Kronecker product ($\otimes$) to come to the full basis. For a 3 spin system:
+
+\begin{equation}
+  I_z^1 = \mathfrak{I}_z^1  \otimes \mathbb{1}^2 \otimes \mathbb{1}^3
+\end{equation}
+Here, $\mathbb{1}^i$ represents the identity matrix of spin $i$. The Kronecker product
+works like:
+\begin{align}
+  \mathfrak{I}_z^1  \otimes \mathbb{1}^2 =&
+  \begin{bmatrix}
+	 -1/2 & 0 \\
+	 0 & 1/2 \\
+  \end{bmatrix}\otimes
+ \begin{bmatrix}
+	 1 & 0 \\
+	 0 & 1 \\
+  \end{bmatrix} = 
+ \begin{bmatrix}
+	 -1/2\begin{bmatrix}
+	 1 & 0 \\
+	 0 & 1 \\
+  \end{bmatrix}	 
+	 & 0 \begin{bmatrix}
+	 1 & 0 \\
+	 0 & 1 \\
+  \end{bmatrix}\\
+	 0 \begin{bmatrix}
+	 1 & 0 \\
+	 0 & 1 \\
+  \end{bmatrix}& 1/2 \begin{bmatrix}
+	 1 & 0 \\
+	 0 & 1 \\
+  \end{bmatrix}\\
+  \end{bmatrix}\\
+  =& \begin{bmatrix}
+	 -1/2 & 0 & 0 & 0 \\
+	 0 & -1/2 & 0 & 0\\
+	 0 & 0 & 1/2 & 0\\
+	 0 & 0 & 0 & 1/2\\
+  \end{bmatrix}
+\end{align}
+for two spin 1/2 nuclei. Note here that this calculation is quite inefficient: a lot of
+zeroes are calculated. Actually, for an $I_z$ operator in matrix form, we know beforehand
+that we can expect only non-zero values along the diagonal.
+
+In all cases, we only need the upper diagonal definitions of the operators. This is
+because we use the Hermitian property of the Hamiltonian, and we need only the upper
+diagonal transition probabilities. This means that we can use:
+\begin{equation}
+  \text{triu}(I_x) = I_+/2
+  \label{eq:IxIp}
+\end{equation}
+which means we only need $I_+$ (and not $I_y$, $I_x$ or $I_-$). This is because $I_-$
+is the complex transpose of $I_+$, and is therefore easily related to it.
+
+The ideas described above lead to the fact the we need to know $Iz$ and $I_+$ for each
+spin. We should establish these as efficient as possible. For both of these, we can
+generate them as 1D arrays in first instance: both operators have only a single `order'
+diagonal populated. For $I_z$ Jellyfish uses a 1D Kronecker product operation.
+
+
+\subsection{Detection}
+For the detection we need both $I_x$ (the start operator) and $I_+$ (the detection
+operator). Using \autoref{eq:IxIp}, we can write this more efficiently:
+\begin{equation}
+  \text{triu}(P) = (T^{-1} \bullet \sum_i I_x^i \bullet T) \cdot (T^{-1} \bullet \sum_i I_+^i\bullet T)
+  = 1/2 (T^{-1} \bullet \sum_i I_+^i\bullet T)\cdot (T^{-1} \bullet \sum_i I_+^i\bullet T) \quad .
+\end{equation}
+In this way, the two parts are equal, and only need to be calculated once.
+Note that this is only valid if \textit{all} spins are detected. In the case were we do
+not detect some spins, these should not be included in the $I_+$ part (the detection
+operator) but must be include in the $I_x$ part. This makes the sums unequal.
+
+
+\subsection{Speeding up: block diagonals}
+One efficient way to speed up the calculation of the spectrum is to separate the total
+matrix representation of the system into different blocks. We can do this if there are
+eigenfunctions who have no matrix elements between them (i.e.\ no off-diagonal element).
+These off-diagonal terms are cause by the strong J-coupling elements. The challenge is to
+find these blocks in an efficient way.
+
+The first trick we can use is called `total spin factorization'. In here, we separate the
+Hamiltonian in parts which have equal total spin quantum number. This is based on the fact
+that our J-Hamiltonian has $I_+^iI_-^S$ as a term. In order for there to be a non-zero
+value between two states, the spin quantum number of spin $s$ should be able to lower 1,
+and of spin $i$ to be raised one. This leads to a new state with the same total spin
+quantum number! Therefore, two states that have a different total spin quantum number can
+never be related, and can be treated as separate groups, i.e.\ as blocks within the
+Hamiltonian.
+
+The above is true in all cases. However, we know that if there are no J-couplings present,
+$all$ states are blocks of there own. This means that there may be smaller blocks
+depending on the actual problem. In order to find them, we make a list of all connections
+between states. We then find all independent groups via the breadth first search (an
+algorithm from graph theory). This takes time, but is often worth it in the end.
+
+All found blocks are diagonalised on their own. In the detection, the eigenvectors of two
+blocks are needed to find the intensities of the transitions between them (the detection
+operator \textit{does} have terms between these groups!). This transformations via the $T$
+terms are also quicker in this way, then for the full Hamiltonian.
+
+\subsection{Speeding up: Composite Particle Model}
+Another way to speed up calculations concerns the case where we have multiple identical
+spins. In Jellyfish, this is input using the `multiplicity' option. Multiple spins are
+identical if they have the same spin quantum number, chemical shift, and identical
+couplings (if any) to all other spins. A clear case where this is true is for the $^1$H
+nuclei in a CH$_3$ group.
+
+Normally, we would treat this group as a system with $2^3 = 8$ energy levels. However, we
+know that there can be no off-diagonal (J-terms) between these. Looking at this system in
+more detail, we see that there are four energies, with intensities [1,3,3,1]. The trick
+that we can use, is to spilt this system in multiple individual parts. This called the
+Composite Particle Model (CPM). In this particular case, we can split this system of three
+spin 1/2 nuclei into one spin 3/2 nucleus (intensities [1,1,1,1]) en two spin 1/2 nuclei
+(intensity [0,2,2,0]). This gives us a size 4 and size 2 problem, instead of a single
+size 8 problem. This is much faster, especially if the rest of the spin system is quite
+large. Note that the two spin 1/2 subsystems are identical, so we calculate its spectrum
+only once, and multiply by 2.
+
+The method described above is valid for any group of identical nuclei. The intensities
+follow exactly the same pattern this group of spins cause as a J-coupling effect on other
+spins. For the example above, the three $^1$H spins cause a quartet ([1,3,3,1]). For four
+spins, a quintet would ensue ([1,4,6,4,1]) which can be described as a spin 2 system,
+three times a spin 1 system, and two times a spin 0 system.
+
+Additional speedup can be achieved using the CPM by using symmetries. We use CPM to split
+all the identical parts of the full spin system. We then have a whole set of individual
+subsystems that we need to do the spectrum calculation on. Before we do that, we can
+check if there are copies due to symmetry effects. Doing this doe snot require a user
+input for the symmetry, but can just be check for all cases (naturally, user input to
+supply the symmetry will also work, but Jellyfish is written to be generally applicable).
+
+
+
 \section{Contact}
 To contact the \texttt{Jellyfish} team write to \texttt{ssnake@science.ru.nl}.
-\bibliographystyle{BibStyle}
-\bibliography{ReferenceManual}
+%\bibliographystyle{BibStyle}
+%\bibliography{ReferenceManual}
 
 \end{document}
