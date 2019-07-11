@@ -25,8 +25,8 @@ Limits = np.array([-0.2 ,0.2])
 
 SpinList = []
 SpinList.append(['1H',0,3,True])
-SpinList.append(['1H',0,3,False])
-SpinList.append(['1H',0,3,False])
+SpinList.append(['1H',0,3,True])
+SpinList.append(['1H',0,3,True])
 SpinList.append(['13C',0,1,True])
 SpinList.append(['13C',0,1,True])
 SpinList.append(['13C',0,1,True])
