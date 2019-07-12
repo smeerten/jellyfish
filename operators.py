@@ -65,8 +65,6 @@ def getLargeIz(SpinList, MatrixSize):
         IzList[spin,:] = kronList(IList)
     return IzList
 
-
-
 def getLargeIx(spin,IpList,SpinList):
     """
     Get Ix operator in total spin systems representation.
@@ -131,12 +129,31 @@ def getLargeIplus(SpinList,IzList,MatrixSize):
     return IpList
 
 def getLargeIpSm(spin,subspin,SpinList,IpList):
-    """ Makes 0.5 * Iplus * Sminus line
-        Note that Iplus and Sminus commute, so can be calculated separately
-        spin: the index of I
-        subspin: the index of S
-        Returns the relevant line, and order of the diagonal it needs to be placed.
     """
+    Makes 0.5 * Iplus * Sminus line
+
+    Returns None, None if the found order is equal to 0
+
+    Parameters
+    ----------
+    spin: int
+        Index of spin 1 (I)
+    subspin: int:
+        Index of spin 2 (S)
+    SpinList: list of spinCls objects
+        All the spins of the system
+    IpList: List of ndarrays
+        The Iz operator for each spin
+
+    Returns
+    -------
+    ndarray:
+        1D numpy array with the 0.5*IpSm values
+    int:
+        Order of the diagonal
+    """
+
+    #Note that Iplus and Sminus commute, so can be calculated separately
     middlelength = np.prod([1] + [i.Length for i in SpinList[spin + 1:subspin]])
     afterlength = np.prod([1] + [i.Length for i in SpinList[subspin + 1:]])
 
@@ -172,6 +189,31 @@ def kronList(List):
 
 
 def getMakeDetectRho(SpinList,IpList):
+    """
+    Makes Detect and RhoZero lines for all spins together.
+    Adds to detect only if the spin is detected
+
+    Returns None, None if the found order is equal to 0
+
+
+    Parameters
+    ----------
+    SpinList: list of spinCls objects
+        All the spins of the system
+    IpList: List of ndarrays
+        The Iz operator for each spin
+
+    Returns
+    -------
+    ndarray:
+        Values of the non-zero elements of the detect matrix
+    ndarray:
+        Values of the elements of the RhoZero matrix (same selection as the detect matrix)
+    ndarray:
+        Row positions where the elements must be put
+    ndarray:
+        Column positions where the elements must be put
+    """
     Lines = np.array([])
     DetectAll = all([spin.Detect for spin in SpinList])
     if not DetectAll: #ID some spins are not detected, use slower routine
