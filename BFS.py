@@ -83,13 +83,7 @@ def getConnections(Lines,Orders,MatrixSize,TotalSpin):
         start +=n
     
     #Do a connection search (bfs) for all elements
-    seen = set()
-    Connect = []
-    for v in range(len(Adj)):
-        if v not in seen: #If v is not already found in another group
-            c = bfs(Adj, v)
-            seen.update(c)
-            Connect.append(np.sort(c))
+    Connect = connectionSearch(Adj)
 
     #Get, for all connected element, the specific Jcoupling positions
     Jconnect = []
@@ -102,6 +96,30 @@ def getConnections(Lines,Orders,MatrixSize,TotalSpin):
     
     return Connect, Jconnect, Positions, JSizeList, TotalSpinConnect
 
+def connectionSearch(Adj):
+    """
+    Find all connected values (i.e. nodes).
+
+    Parameters
+    ----------
+    Adj: ndarray
+        Array of MatrixSize x (2 * LineElements). For each element, holds
+        the index of all elements it has a cross-term with
+        
+    Returns
+    -------
+    list of lists:
+        List of each group of connected elements
+    """
+    seen = set()
+    Connect = []
+    for v in range(len(Adj)):
+        if v not in seen: #If v is not already found in another group
+            c = bfs(Adj, v)
+            seen.update(c)
+            Connect.append(np.sort(c))
+    return Connect
+
 def bfs(Adj, start):
     """
     Use breadth first search (BFS) for find connected elements.
@@ -110,7 +128,7 @@ def bfs(Adj, start):
     ----------
     Adj: ndarray
         Array of MatrixSize x (2 * LineElements). For each element, holds
-        teh index of all elements it has a cross-term with
+        the index of all elements it has a cross-term with
     start: int
         Start the search with this element
         

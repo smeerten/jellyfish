@@ -188,7 +188,7 @@ def kronList(List):
     return M
 
 
-def getMakeDetectRho(SpinList,IpList):
+def getDetectRho(SpinList,IpList):
     """
     Makes Detect and RhoZero lines for all spins together.
     Adds to detect only if the spin is detected

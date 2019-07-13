@@ -26,6 +26,7 @@ import sys
 import operators as op
 import BFS as bfs
 import CPM as cpm
+import FreqInt as fi
 
 GAMMASCALE = 42.577469 / 100
 isoPath = os.path.dirname(os.path.realpath(__file__)) + os.path.sep + "IsotopeProperties"
@@ -135,7 +136,7 @@ class spinSystemCls:
         self.IzList = op.getLargeIz(self.SpinList, self.MatrixSize)
         self.TotalSpin = np.sum(self.IzList,0) #For total spin factorization
         self.IpList = op.getLargeIplus(self.SpinList,self.IzList,self.MatrixSize)
-        self.Detect, self.RhoZero, self.DPos1, self.DPos2 = op.getMakeDetectRho(self.SpinList,self.IpList)
+        self.Detect, self.RhoZero, self.DPos1, self.DPos2 = op.getDetectRho(self.SpinList,self.IpList)
         tmpTime = time.time()
         self.HShift, self.HJz, self.Connect, self.Jconnect, self.JposList, self.JSize, self.TotalSpinConnect = self.__prepareH()
         TimeDict['connect'] += time.time() - tmpTime
@@ -173,6 +174,14 @@ class spinSystemCls:
         return HJz, Lines, Orders
 
     def __GetMatrixSize(self):
+        """
+        Get the full matrix size of the spin system
+
+        Returns
+        -------
+        int:
+            Full matrix size
+        """
         return np.prod([1] + [i.Length for i in self.SpinList])
 
 def MakeH(spinSys, B0, TimeDict):
@@ -204,10 +213,23 @@ def MakeSubH(spinSys,Jconnect,Pos,DiagLine):
 
 def RebaseMatrix(Pos,Jpos,Jval,makeH):
     """ 
-       Makes a matrix (Hamiltonian) from an input list of off-diagonal elements
-       Pos: list with positions of the states in the full matrix should be SORTED
-       Jpos: Positions of the cross terms in the full matrix
-       Jval: values of these crossterms
+    Makes a matrix (Hamiltonian) from an input list of off-diagonal elements
+
+    Parameters
+    ----------
+    Pos: list
+        List with positions of the states in the full matrix, should be SORTED
+    Jpos: list
+        Positions of the cross terms in the full matrix
+    Jval: list
+        Values of these crossterms
+    makeH: bool
+        If True, Hamiltonain is returned, else only the reorder array
+
+    Returns
+    -------
+    ndarray:
+        Hamiltonian matrix, or reorder array (row,column)
     """
     Dim = len(Pos)
     #Convert the state numbers to the new representation (i.e. 0,1,2,3...)
@@ -222,75 +244,6 @@ def RebaseMatrix(Pos,Jpos,Jval,makeH):
         return H
     else:
         return out
-
-def findFreqInt(spinSys, BlocksT, BlocksDiag, TimeDict):
-    Inten = np.array([])
-    Freq = np.array([])
-
-    pos1Needed = []
-    pos2Needed = []
-    rhoNeeded = []
-    detectNeeded = []
-    tmpTime = time.time()
-    for Rows in (spinSys.Connect):
-        RowPos = np.in1d(spinSys.DPos1, Rows)
-        pos1Needed.append(spinSys.DPos1[RowPos])
-        pos2Needed.append(spinSys.DPos2[RowPos])
-        rhoNeeded.append(spinSys.RhoZero[RowPos])
-        if spinSys.Detect is not None:
-            detectNeeded.append(spinSys.Detect[RowPos])
-    TimeDict['intPrepare'] += time.time() - tmpTime
-
-    for index in range(len(spinSys.Connect)):
-        if len(pos1Needed[index]) == 0:
-            continue
-        Rows = spinSys.Connect[index]
-        for index2 in range(index + 1, len((spinSys.Connect))):
-            #Only continue if totalspin between the two parts changes with +1 (only
-            #the can there be an Iplus operator between them)
-            if spinSys.TotalSpinConnect[index] - spinSys.TotalSpinConnect[index2] != 1.0:
-                continue
-            tmpTime = time.time()
-            Cols = spinSys.Connect[index2]
-            #Make RhoZero and Detect for this element
-            ColPos = np.in1d(pos2Needed[index], Cols)
-            if not any(ColPos): #Skip if empty
-                continue
-            ColNeed = pos2Needed[index][ColPos]
-            RowNeed = pos1Needed[index][ColPos]
-            RhoElem = rhoNeeded[index][ColPos]
-
-            ##Convert to new system
-            ColOut = RebaseMatrix(Cols,ColNeed,None,False)
-            RowOut = RebaseMatrix(Rows,RowNeed,None,False)
-            #Make Matrix
-            RhoZeroMat = np.zeros((len(Rows),len(Cols)))
-            RhoZeroMat[RowOut,ColOut] = RhoElem
-            TimeDict['before'] += time.time() - tmpTime
-
-            #Transform to detection frame
-            #Equal to: np.dot(np.transpose(a),np.dot(b,a))
-            tmpTime = time.time()
-            RhoZeroMat = np.einsum('ij,jk',np.transpose(BlocksT[index]),np.einsum('ij,jk',RhoZeroMat,BlocksT[index2]))
-            TimeDict['dot'] += time.time() - tmpTime
-
-            if spinSys.Detect is not None: #Only calc Detect if it is different from RhoZero
-                DetectElem = detectNeeded[index][ColPos]
-                DetectMat = np.zeros((len(Rows),len(Cols)))
-                DetectMat[RowOut,ColOut] = DetectElem
-                DetectMat = np.einsum('ij,jk',np.transpose(BlocksT[index]),np.einsum('ij,jk',DetectMat,BlocksT[index2]))
-                RhoZeroMat = DetectMat * RhoZeroMat
-            else:
-                RhoZeroMat *= RhoZeroMat * 2 #Else Detect is equal to 2 * RhoZero
-
-            #Get intensity and frequency of relevant elements
-            tmpTime = time.time()
-            Pos = np.where(RhoZeroMat > 1e-9) 
-            Inten = np.append(Inten, RhoZeroMat[Pos].flatten())
-            tmp2 = BlocksDiag[index][Pos[0]] - BlocksDiag[index2][Pos[1]]
-            Freq = np.append(Freq, np.abs(tmp2))
-            TimeDict['intenGet'] += time.time() - tmpTime
-    return  Freq, Inten * spinSys.Scaling
 
 def MakeSpectrum(Intensities, Frequencies, AxisLimits, RefFreq,LineBroadening,NumPoints):
     Limits = tuple(AxisLimits * RefFreq * 1e-6)
@@ -315,6 +268,25 @@ def MakeSpectrum(Intensities, Frequencies, AxisLimits, RefFreq,LineBroadening,Nu
     return Spectrum * NumPoints, Axis, RefFreq
 
 def getIsolateSys(spinList, Jmatrix):
+    """
+    Checks the input spins and Jmatrix to find isolated systems.
+    It returns these systems with their own Jmatrix. This is usually not
+    needed, if the user does its work properly (and runs Jellyfish for the
+    separate systems in the first place). But this check is very quick, so why
+    not do it.
+
+    Parameters
+    ----------
+    spinList: list of list
+        List with each spin information (e.g. ['1H',0,3,True], for [Isotope,Shift,Multiplicity,Detect]
+    Jmatrix: ndarray
+        2D matrix with the J-coupling information for the spin system.
+
+    Returns
+    -------
+    list of lists:
+        Each element contains [list of spin information, Jmatrix]
+    """
     Pos1, Pos2 = np.where(Jmatrix != 0.0)
     Length = len(spinList)
 
@@ -324,13 +296,7 @@ def getIsolateSys(spinList, Jmatrix):
         Adj[Pos2[x],x * 2 + 1] = Pos1[x]
     
     #Do a connection search (bfs) for all elements
-    seen = set()
-    Connect = [] #Holds the groups of coupled spins
-    for v in range(len(Adj)):
-        if v not in seen:
-            c = bfs.bfs(Adj, v)
-            seen.update(c)
-            Connect.append(np.sort(c))
+    Connect = bfs.connectionSearch(Adj)
 
     isoSpins = []
     for con in Connect:
@@ -343,9 +309,21 @@ def getIsolateSys(spinList, Jmatrix):
     return isoSpins
 
 def reduceSpinSys(spinSysList):
-    """Remove identical spinsystems from the list
-       Spin order is not considered when comparing spinsystems
-       If duplicate is found, its scaling (intensity) is added to the relevant unique spinsys
+    """
+    Remove identical spinsystems from the list
+    Spin order is not considered when comparing spinsystems
+    If duplicate is found, its scaling (intensity) is added to the relevant unique spinsys
+    This function can be used to speed up the calculations in case of symmetry.
+
+    Parameters
+    ----------
+    spinSysList: list
+        List of spinSystemCls objects
+
+    Returns
+    -------
+    list of spinSystemCls objects:
+        The filtered (reduced size) list of spin systems
     """
     uniqueSys = []
     for elem in spinSysList:
@@ -357,19 +335,57 @@ def reduceSpinSys(spinSysList):
     return uniqueSys
 
 def expandSpinsys(spinList,Jmatrix):
+    """ 
+    Creates a list of spinsystems from the input of spin information and 
+    J-coupling matrix. Separates into isolated systems that have no J-coupling
+    between them (if any). Uses Composite Particle Model to split these systems further.
+    The resulting systems are compared to check if there are duplicates.
+
+    Parameters
+    ----------
+    spinList: list of list
+        List with each spin information (e.g. ['1H',0,3,True], for [Isotope,Shift,Multiplicity,Detect]
+    Jmatrix: ndarray
+        2D matrix with the J-coupling information for the spin system.
+
+    Returns
+    -------
+    list of spinSysCls objects:
+        The spin systems.
+    """
     #Get isolated parts
     isoSys = getIsolateSys(spinList, Jmatrix)
     
     #Do CPM for each isolated spinsys
     spinSysList = []
     for elem in isoSys:
-        spinSysList = spinSysList + cpm.performCPM(elem[0],elem[1])
+        spinSysList.extend(cpm.performCPM(elem[0],elem[1]))
 
     #remove duplicates
     spinSysList = reduceSpinSys(spinSysList)
     return spinSysList
 
 def getFreqInt(spinSysList, B0, StrongCoupling = True):
+    """ 
+    Calculates the frequencies and intensities of all transition
+    of all the spin systems, for the given magnetic field strength.
+
+    Parameters
+    ----------
+    spinSysList: list of spinSystemCls objects
+        The spin systems
+    B0: float
+        The magnetic field strength in Tesla
+    StrongCoupling (optional = True): bool
+        Whether or not to include strong coupling (off-diagonal Hamiltonian elements)
+
+    Returns
+    -------
+    ndarray:
+        Frequencies of the resonances
+    ndarray:
+        Intensities of the resonances
+    """
     Freq = np.array([])
     Int = np.array([])
     TimeDict = {'prepare':0, 'connect':0, 'MakeH':0 , 'eig':0, 'FreqInt': 0,'intPrepare':0, 'before':0,'intenGet':0, 'dot':0 }
@@ -383,7 +399,7 @@ def getFreqInt(spinSysList, B0, StrongCoupling = True):
         BlocksDiag, BlocksT = MakeH(spinSys, B0, TimeDict)
         TimeDict['MakeH'] += time.time() - tmpTime
         tmpTime = time.time()
-        Ftmp, Itmp = findFreqInt(spinSys, BlocksT, BlocksDiag, TimeDict)
+        Ftmp, Itmp = fi.findFreqInt(spinSys, BlocksT, BlocksDiag, TimeDict)
         TimeDict['FreqInt'] += time.time() - tmpTime
         Freq = np.append(Freq, Ftmp)
         Int = np.append(Int, Itmp)
@@ -391,17 +407,16 @@ def getFreqInt(spinSysList, B0, StrongCoupling = True):
     return Freq, Int
 
 def saveSimpsonFile(data,limits,ref,location):
-
-        sw = (limits[1] - limits[0]) * ref * 1e-6
-        with open(location, 'w') as f:
-            f.write('SIMP\n')
-            f.write('NP=' + str(len(data)) + '\n')
-            f.write('SW=' + str(sw) + '\n')
-            f.write('TYPE=SPE' + '\n')
-            f.write('DATA' + '\n')
-            for Line in data:
-                f.write(str(Line.real) + ' ' + str(Line.imag) + '\n')
-            f.write('END')
+    sw = (limits[1] - limits[0]) * ref * 1e-6
+    with open(location, 'w') as f:
+        f.write('SIMP\n')
+        f.write('NP=' + str(len(data)) + '\n')
+        f.write('SW=' + str(sw) + '\n')
+        f.write('TYPE=SPE' + '\n')
+        f.write('DATA' + '\n')
+        for Line in data:
+            f.write(str(Line.real) + ' ' + str(Line.imag) + '\n')
+        f.write('END')
 
 def saveMatlabFile(data,limits,ref,axis,location):
     import scipy.io
