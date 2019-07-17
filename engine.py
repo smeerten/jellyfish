@@ -185,21 +185,57 @@ class spinSystemCls:
         return np.prod([1] + [i.Length for i in self.SpinList])
 
 def MakeH(spinSys, B0, TimeDict):
-    #Make shift and J
+    """
+    Make the block diagonal Hamiltonians for each connected block.
+
+    Parameters
+    ----------
+    spinSys: Spin system class
+        The spin system
+    B0: float
+        The B0 field strength in Tesla.
+    TimeDict: dict
+        Dictionary for timing purposes
+
+    Returns
+    -------
+    list of 1D arrays:
+        List of the eigenvalues of each block
+    list of 2D arrays:
+        List of the eigenfunctions of each block
+    """
     DiagLine = spinSys.HShift * B0 + spinSys.HJz
     BlocksDiag = []
     BlocksT = []
     for x, Pos in enumerate(spinSys.Connect):
         H = MakeSubH(spinSys,spinSys.Jconnect[x],Pos,DiagLine)
         tmpTime = time.time()
-        tmp1, tmp2 = np.linalg.eigh(H)
+        EigVal, T = np.linalg.eigh(H)
         TimeDict['eig'] += time.time() - tmpTime
-        BlocksDiag.append(tmp1)
-        BlocksT.append(tmp2)
-
+        BlocksDiag.append(EigVal)
+        BlocksT.append(T)
     return BlocksDiag, BlocksT
 
 def MakeSubH(spinSys,Jconnect,Pos,DiagLine):
+    """
+    Makes the Hamiltonian for a single block.
+
+    Parameters
+    ----------
+    spinSys: Spin system class
+        The spin system
+    Jconnect: ndarray
+        The Jconnections of this block
+    Pos: ndarray
+        Positions of the elements in the full matrix
+    DiagLine: ndarray
+        1D array of the true diagonal (shift + Jz)
+
+    Returns
+    -------
+    ndarray:
+        2D array with the Hamiltonian
+    """
     Dim = len(Pos)
     if len(Pos) > 1:
         Jpos = spinSys.JposList[Jconnect]
