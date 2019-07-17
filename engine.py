@@ -135,8 +135,8 @@ class spinSystemCls:
         # Calc the more involved elements. 
         self.IzList = op.getLargeIz(self.SpinList, self.MatrixSize)
         self.TotalSpin = np.sum(self.IzList,0) #For total spin factorization
-        self.IpList = op.getLargeIplus(self.SpinList,self.IzList,self.MatrixSize)
-        self.Detect, self.RhoZero, self.DPos1, self.DPos2 = op.getDetectRho(self.SpinList,self.IpList)
+        self.IpList, self.Orders = op.getLargeIplus(self.SpinList,self.IzList,self.MatrixSize)
+        self.Detect, self.RhoZero, self.DPos1, self.DPos2 = op.getDetectRho(self.SpinList,self.IpList,self.Orders)
         tmpTime = time.time()
         self.HShift, self.HJz, self.Connect, self.Jconnect, self.JposList, self.JSize, self.TotalSpinConnect = self.__prepareH()
         TimeDict['connect'] += time.time() - tmpTime
@@ -167,7 +167,7 @@ class spinSystemCls:
                 if self.Jmatrix[spin,subspin] != 0:
                     HJz += self.IzList[spin] * self.IzList[subspin] * self.Jmatrix[spin,subspin]
                     if self.HighOrder:
-                        Val, order = op.getLargeIpSm(spin, subspin, self.SpinList, self.IpList)
+                        Val, order = op.getLargeIpSm(spin, subspin, self.IpList, self.Orders)
                         if Val is not None:
                             Orders.append(order)
                             Lines.append(Val * self.Jmatrix[spin,subspin])

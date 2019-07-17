@@ -65,35 +65,6 @@ def getLargeIz(SpinList, MatrixSize):
         IzList[spin,:] = kronList(IList)
     return IzList
 
-def getLargeIx(spin,IpList,SpinList):
-    """
-    Get Ix operator in total spin systems representation.
-    Uses the fact that Ix = 0.5 * (Iplus + Iminus). As Iminus is in the lower 
-    diagonals, it is not needed. So Ix = 0.5 * Iplus
-    The order of the diagonal is equal to the total length of the spins that comes
-    after the current spin.
-
-    Parameters
-    ----------
-
-    IpList: List of ndarrays
-        The Iplus operator for each spin
-    SpinList: list of spinCls objects
-        All the spins of the system
-
-    Returns
-    -------
-    ndarray:
-        1D numpy array with the Ix values
-    int:
-        order of the diagonal this line should be placed
-    """
-
-    order = np.prod([1] + [i.Length for i in SpinList[spin + 1:]])
-    Ix = 0.5 * IpList[spin][:-order]
-    return Ix, order
-
-
 def getLargeIplus(SpinList,IzList,MatrixSize):
     """
     Get Iplus operator in total spin systems representation.
@@ -108,7 +79,6 @@ def getLargeIplus(SpinList,IzList,MatrixSize):
 
     SpinList: list of spinCls objects
         All the spins of the system
-
     IpList: List of ndarrays
         The Iz operator for each spin
     MatrixSize: int
@@ -119,16 +89,17 @@ def getLargeIplus(SpinList,IzList,MatrixSize):
     ndarray:
         1D numpy array with the Iplus values
     """
-    nSpins = len(SpinList)
-    IpList = np.zeros((nSpins,MatrixSize))
-    for spin in range(nSpins):
+    IpList = np.zeros((len(SpinList),MatrixSize))
+    orders = []
+    for spin in range(len(SpinList)):
+        orders.append(np.prod([1] + [i.Length for i in SpinList[spin + 1:]]))
         I = SpinList[spin].I
         #The 'sign' appears to be that of the Imin, but answer is correct. Sign inversion leads to
         #very bad results
         IpList[spin,:] = np.sqrt(I * (I +1) - IzList[spin] * (IzList[spin] - 1))
-    return IpList
+    return IpList, orders
 
-def getLargeIpSm(spin,subspin,SpinList,IpList):
+def getLargeIpSm(spin, subspin, IpList, Orders):
     """
     Makes 0.5 * Iplus * Sminus line
 
@@ -140,10 +111,12 @@ def getLargeIpSm(spin,subspin,SpinList,IpList):
         Index of spin 1 (I)
     subspin: int:
         Index of spin 2 (S)
-    SpinList: list of spinCls objects
-        All the spins of the system
     IpList: List of ndarrays
         The Iz operator for each spin
+    Orders: list
+        List of the diagonal orders of each spin
+
+
 
     Returns
     -------
@@ -152,19 +125,11 @@ def getLargeIpSm(spin,subspin,SpinList,IpList):
     int:
         Order of the diagonal
     """
-
-    #Note that Iplus and Sminus commute, so can be calculated separately
-    middlelength = np.prod([1] + [i.Length for i in SpinList[spin + 1:subspin]])
-    afterlength = np.prod([1] + [i.Length for i in SpinList[subspin + 1:]])
-
-    #Magic statement for the position of the line
-    order = (middlelength * SpinList[subspin].Length - 1) *  afterlength  
-
+    order = Orders[spin] - Orders[subspin]
     if order != 0:
         Iplus = IpList[spin][:-order]
         Smin = np.flipud(IpList[subspin])[:-order] #Iminus is flipped Iplus
         Line = 0.5 * Iplus * Smin
-
         return Line, order
     return None, None
 
@@ -188,13 +153,10 @@ def kronList(List):
     return M
 
 
-def getDetectRho(SpinList,IpList):
+def getDetectRho(SpinList,IpList,Orders):
     """
     Makes Detect and RhoZero lines for all spins together.
     Adds to detect only if the spin is detected
-
-    Returns None, None if the found order is equal to 0
-
 
     Parameters
     ----------
@@ -202,6 +164,8 @@ def getDetectRho(SpinList,IpList):
         All the spins of the system
     IpList: List of ndarrays
         The Iz operator for each spin
+    Orders: list
+        List of the diagonal orders of each spin
 
     Returns
     -------
@@ -214,33 +178,30 @@ def getDetectRho(SpinList,IpList):
     ndarray:
         Column positions where the elements must be put
     """
-    Lines = np.array([])
+    RhoZero = np.array([])
+    RowPos = np.array([])
+    ColPos = np.array([])
+    Detect = np.array([])
     DetectAll = all([spin.Detect for spin in SpinList])
-    if not DetectAll: #ID some spins are not detected, use slower routine
-        Detect = np.array([])
-    else: #Else, Rho and Detect are equal (with a factor), and only Rho is calculated and used
+    if DetectAll: #If all detcted, use fast routine
+        #Rho and Detect are equal (with a factor), and only Rho is calculated and used
         Detect = None
-    Pos1 = np.array([])
-    Pos2 = np.array([])
-    nSpins = len(SpinList)
-    for spin in range(nSpins):
-        #Make single spin operator when needed. Only Ix needs to be saved temporarily, as it is used twice 
-        Line, Order =  getLargeIx(spin,IpList,SpinList)
-        Lines = np.append(Lines,Line)
-        Pos1 = np.append(Pos1,np.arange(len(Line)))
-        Pos2 = np.append(Pos2,np.arange(len(Line)) + Order)
+    for spin in range(len(SpinList)):
+        IxLine =  0.5 * IpList[spin][:-Orders[spin]] #Make the Ix line. 
+        RhoZero = np.append(RhoZero,IxLine)
+        RowPos = np.append(RowPos,np.arange(len(IxLine))) #Row position of elements
+        ColPos = np.append(ColPos,np.arange(len(IxLine)) + Orders[spin]) #Column position of elements
         if not DetectAll:
             if SpinList[spin].Detect: #Add to detection
-                Detect = np.append(Detect,Line * 2)#Factor 2 because Iplus = 2 * Ix
+                Detect = np.append(Detect,IxLine * 2)#Factor 2 because Iplus = 2 * Ix
             else:
-                Detect = np.append(Detect,Line * 0)
+                Detect = np.append(Detect,IxLine * 0)
 
     #Filter for zero elements
-    UsedElem = np.where(Lines != 0.0)
-    Lines = Lines[UsedElem]
-    Pos1 = Pos1[UsedElem]
-    Pos2 = Pos2[UsedElem]
+    UsedElem = np.where(RhoZero != 0.0)
+    RhoZero = RhoZero[UsedElem]
+    RowPos = RowPos[UsedElem]
+    ColPos = ColPos[UsedElem]
     if not DetectAll:
         Detect = Detect[UsedElem]
-    RhoZero = Lines  
-    return Detect, RhoZero, Pos1, Pos2 
+    return Detect, RhoZero, RowPos, ColPos 
