@@ -282,6 +282,33 @@ def RebaseMatrix(Pos,Jpos,Jval,makeH):
         return out
 
 def MakeSpectrum(Intensities, Frequencies, AxisLimits, RefFreq,LineBroadening,NumPoints):
+    """
+    Makes a spectrum of the supplied intensity and frequency lists.
+    Uses the histogram function to do this. This is fast, and accurate if enough
+    point are used for the reconstruction. Inverse fft is done to add a line broadening
+    effect.
+
+    Parameters
+    ----------
+    Intensities: ndarray
+        1D array with all the transition intensities
+    Frequencies: ndarray
+        1D array with all the transition frequencies (i.e. energies)
+    AxisLimits: ndarray
+        [xmin,xmax] in ppm
+    RefFreq: float
+        Reference frequency (0 ppm frequency) in Hz
+    LineBroadening: float
+        Amount of Lorentzian line broadening (in Hz)
+    NumPoints: int
+        Number of points in the spectrum. Advised to be a power of 2. More points
+        leads to a more accurate spectrum, but is also slower.
+
+    Returns
+    -------
+    ndarray:
+        The spectrum
+    """
     Limits = tuple(AxisLimits * RefFreq * 1e-6)
     sw = Limits[1] - Limits[0]
     dw = 1.0/ sw
