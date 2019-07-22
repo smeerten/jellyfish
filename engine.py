@@ -90,12 +90,25 @@ class spinSystemCls:
         allows for comparison of spinSystemCls instances before these calculations.
     """
     def __init__(self, SpinList, Jmatrix, Scaling = 1, HighOrder = True):
+        """
+        
+        Parameters
+        ----------
+        SpinList: list of spinCls elements
+            List of the different spins
+        Jmatrix: 2D-array
+            Array with the Jcoupling values. Only the upper diagonal elements are used.
+        Scaling (optional = 1): float
+            Scaling of the intensity of this spinsystem.
+        HighOrder (optional = True): bool
+            Whether strong coupling effects should be included.
+        """
         self.SpinList = SpinList
         self.nSpins = len(self.SpinList)
         self.Jmatrix = np.array(Jmatrix)
         self.HighOrder = HighOrder
         self.Scaling = Scaling
-        self.MatrixSize = self.__GetMatrixSize()
+        self.MatrixSize = np.prod([1] + [i.Length for i in self.SpinList])
 
     def __eq__(self,other):
         #Ordering of the spins is not considered (as it is of no relevance)
@@ -132,7 +145,13 @@ class spinSystemCls:
             return NotImplemented
 
     def prepare(self,TimeDict):
-        # Calc the more involved elements. 
+        """
+        Calculate the more involved elements. 
+
+        Parameters:
+        TimeDict: dict
+            Dict for timekeeping purposes.
+        """
         self.IzList = op.getLargeIz(self.SpinList, self.MatrixSize)
         self.TotalSpin = np.sum(self.IzList,0) #For total spin factorization
         self.IpList, self.Orders = op.getLargeIplus(self.SpinList,self.IzList,self.MatrixSize)
@@ -142,7 +161,27 @@ class spinSystemCls:
         TimeDict['connect'] += time.time() - tmpTime
 
     def __prepareH(self):
-        #Make the B0 independent Hamiltonian (i.e. HShift needs to be multiplied by B0)
+        """
+        Make the B0 independent Hamiltonian (i.e. HShift needs to be multiplied by B0).
+        The Hamiltonian is defined as a series of independent blocks.
+
+        Returns
+        -------
+        ndarray:
+            Shift Hamiltonian (diagonal)
+        ndarray:
+            HJz Hamiltonian (diagonal)
+        list of list:
+            Holds the connected elements of each group
+        list of list:
+            Holds the indexes to the J-coupling values for each group
+        ndarray:
+            Nx2 array with [Row,Column] positions of all non-zero elements
+        ndarray:
+            Values of of each non-zero element
+        list:
+            Total spin quantum number of each group
+        """
         HShift = self.__MakeShiftH()
         HJz, Lines, Orders = self.__MakeJLines()
         Connect, Jconnect, Jpos, JSize, TotalSpinConnect = bfs.getConnections(Lines,Orders,self.MatrixSize,self.TotalSpin)
@@ -159,6 +198,18 @@ class spinSystemCls:
         return HShift
 
     def __MakeJLines(self):
+        """
+        Constructs the lines for the J-coupling part of the Hamiltonian.
+
+        Returns
+        -------
+        ndarray:
+            Diagonal part (HJz)
+        list of ndarrays:
+            List of 1D arrays with the values of a specific off-diagonal line
+        list of ints:
+            Diagonal orders of each line 
+        """
         Lines = []
         Orders = []
         HJz = np.zeros(self.MatrixSize)
@@ -182,7 +233,7 @@ class spinSystemCls:
         int:
             Full matrix size
         """
-        return np.prod([1] + [i.Length for i in self.SpinList])
+        return 
 
 def MakeH(spinSys, B0, TimeDict):
     """
@@ -470,6 +521,20 @@ def getFreqInt(spinSysList, B0, StrongCoupling = True):
     return Freq, Int
 
 def saveSimpsonFile(data,limits,ref,location):
+    """
+    Save spectrum in SIMPSON file format.
+
+    Parameters
+    ----------
+    data: complex ndarray
+        The spectrum
+    limits: list
+        [xmin,xmax] limits in ppm
+    ref: float
+        Reference frequency (0 ppm frequency) in Hz
+    location: string
+        Location where the file should be saved
+    """
     sw = (limits[1] - limits[0]) * ref * 1e-6
     with open(location, 'w') as f:
         f.write('SIMP\n')
@@ -482,6 +547,22 @@ def saveSimpsonFile(data,limits,ref,location):
         f.write('END')
 
 def saveMatlabFile(data,limits,ref,axis,location):
+    """
+    Save spectrum in SIMPSON file format.
+
+    Parameters
+    ----------
+    data: complex ndarray
+        The spectrum
+    limits: list
+        [xmin,xmax] limits in ppm
+    ref: float
+        Reference frequency (0 ppm frequency) in Hz
+    axis: ndarray
+        The x-axis
+    location: string
+        Location where the file should be saved
+    """
     import scipy.io
     freq = (limits[1] + limits[0])/2 * ref * 1e-6 + ref
     sw = (limits[1] - limits[0]) * ref * 1e-6
