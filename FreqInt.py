@@ -23,7 +23,7 @@ import engine as en
 import time
 
 
-def findFreqInt(spinSys, BlocksT, BlocksDiag, TimeDict):
+def findFreqInt(spinSys, TimeDict):
     """ 
     Get all the frequencies and intensities for the spin system.
 
@@ -53,7 +53,8 @@ def findFreqInt(spinSys, BlocksT, BlocksDiag, TimeDict):
     pos2Needed = []
     rhoNeeded = []
     detectNeeded = []
-    for Rows in (spinSys.Connect):
+    for Block in (spinSys.Blocks):
+        Rows = Block.Pos
         RowPos = np.in1d(spinSys.DPos1, Rows)
         pos1Needed.append(spinSys.DPos1[RowPos])
         pos2Needed.append(spinSys.DPos2[RowPos])
@@ -63,16 +64,20 @@ def findFreqInt(spinSys, BlocksT, BlocksDiag, TimeDict):
 
     Inten = np.array([])
     Freq = np.array([])
-    for index in range(len(spinSys.Connect)):
-        if len(pos1Needed[index]) == 0:
+    for index, Block1 in enumerate(spinSys.Blocks):
+        if len(rhoNeeded[index]) == 0:
             continue
-        Rows = spinSys.Connect[index]
-        for index2 in range(index + 1, len((spinSys.Connect))):
+        if not EasyDetect and not np.any(detectNeeded[index]): #Skip if detect is empty
+            continue
+        Rows = Block1.Pos
+        for index2, Block2 in enumerate(spinSys.Blocks):
+            if index2 <= index:
+                continue
             #Skip if totalspin between the two parts changes with +1 (only
             #then can there be an Iplus operator between them)
-            if spinSys.TotalSpinConnect[index] - spinSys.TotalSpinConnect[index2] != 1.0:
+            if Block1.TotalSpin - Block2.TotalSpin != 1.0:
                 continue
-            Cols = spinSys.Connect[index2]
+            Cols = Block2.Pos
             ColPos = np.in1d(pos2Needed[index], Cols)
             if not any(ColPos): #Skip if empty
                 continue
@@ -82,17 +87,19 @@ def findFreqInt(spinSys, BlocksT, BlocksDiag, TimeDict):
             DetectElem = None
             if not EasyDetect: 
                 DetectElem = detectNeeded[index][ColPos]
+                if not np.any(DetectElem): #Skip if detect is empty
+                    continue
 
             ##Convert to new system
             ColOut = en.RebaseMatrix(Cols,ColNeed,None,False)
             RowOut = en.RebaseMatrix(Rows,RowNeed,None,False)
 
-            propMat = getProp(EasyDetect,RowOut,ColOut,RhoElem,DetectElem,BlocksT[index],BlocksT[index2])
+            propMat = getProp(EasyDetect,RowOut,ColOut,RhoElem,DetectElem,Block1.getT(),Block2.getT())
 
             #Get intensity and frequency of relevant elements
             Pos = np.where(propMat > 1e-9) 
             Inten = np.append(Inten, propMat[Pos].flatten())
-            Freq = np.append(Freq, BlocksDiag[index][Pos[0]] - BlocksDiag[index2][Pos[1]])
+            Freq = np.append(Freq, Block1.getEig()[Pos[0]] - Block2.getEig()[Pos[1]])
     return  Freq, Inten * spinSys.Scaling
 
 

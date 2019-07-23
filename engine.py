@@ -83,6 +83,94 @@ class spinCls:
             return NotImplemented
 
 
+class blockCls:
+    """
+    Hold the information for a single block of the Hamiltonian
+
+    Constructs the Hamiltonian and solves the eigenvector problem when
+    the eigenvectors or eigenvalues are asked.
+    """
+    def __init__(self, Jpos,Jval,Pos,Shift,Hjz,TotalSpin):
+        """
+        Parameters
+        ----------
+        Jpos: ndarray
+            Nx2 array with [Row,Column] positions of all non-zero elements
+        Jval: ndarray
+            Values of of each non-zero element
+        Pos: ndarray
+            1D array with the positions of each element sin the large total spin matrix
+        Shift:
+            1D array with the diagonal values of the Hamiltonian due to the chemical shift
+        Hjz: ndarray
+            1D array with the diagonal values of the Hamiltonian due to the J-coupling
+        TotalSpin: float:
+            Total spin quantum number of this group
+        """
+        self.Jpos = Jpos
+        self.Jval = Jval
+        self.Pos = Pos
+        self.Shift = Shift
+        self.Hjz = Hjz
+        self.TotalSpin = TotalSpin
+        self.T = None
+        self.Eig = None
+
+    def makeH(self):
+        """
+        Constructs the Hamiltonian and sets the eigenvectors and eigenvalues
+        """
+        dim = len(self.Pos)
+        if dim > 1:
+            H = RebaseMatrix(self.Pos,self.Jpos,self.Jval,True)
+        else:
+            H = np.zeros((dim,dim))
+        H[range(dim),range(dim)] = self.Shift * self.B0 + self.Hjz #Add diagonal Shift + zpart of J
+        EigVal, T = np.linalg.eigh(H)
+        self.Eig = EigVal
+        self.T = T
+
+    def setB0(self,B0):
+        """
+        Set the magnetic field strength (B0)
+
+        Parameters
+        ----------
+        B0: float
+            B0 field strength in tesla
+        """
+        self.B0 = B0
+
+    def getT(self):
+        """
+        Get T, the eigenvectors.
+        T is calculated on the first call of this function.
+
+        Returns
+        -------
+        ndarray:
+            2d array with the eigenvectors
+        """
+        if self.T is None:
+            self.makeH()
+        return self.T
+
+    def getEig(self):
+        """
+        Get the eigenvalues.
+        The eigenvalues is calculated on the first call of this function.
+
+        Returns
+        -------
+        ndarray:
+            2d array with the eigenvectors
+        """
+        if self.Eig is None:
+            self.makeH()
+        return self.Eig
+
+
+
 class spinSystemCls:
     """ Class that holds a single spinsystem
         The init sets all the properties of the spinsys. Calculation of the more `expensive'
@@ -157,7 +245,7 @@ class spinSystemCls:
         self.IpList, self.Orders = op.getLargeIplus(self.SpinList,self.IzList,self.MatrixSize)
         self.Detect, self.RhoZero, self.DPos1, self.DPos2 = op.getDetectRho(self.SpinList,self.IpList,self.Orders)
         tmpTime = time.time()
-        self.HShift, self.HJz, self.Connect, self.Jconnect, self.JposList, self.JSize, self.TotalSpinConnect = self.__prepareH()
+        self.Blocks = self.__prepareH()
         TimeDict['connect'] += time.time() - tmpTime
 
     def __prepareH(self):
@@ -167,25 +255,23 @@ class spinSystemCls:
 
         Returns
         -------
-        ndarray:
-            Shift Hamiltonian (diagonal)
-        ndarray:
-            HJz Hamiltonian (diagonal)
-        list of list:
-            Holds the connected elements of each group
-        list of list:
-            Holds the indexes to the J-coupling values for each group
-        ndarray:
-            Nx2 array with [Row,Column] positions of all non-zero elements
-        ndarray:
-            Values of of each non-zero element
-        list:
-            Total spin quantum number of each group
+        list of blockCls elements:
+            A list of all teh Hamiltonian blocks
         """
-        HShift = self.__MakeShiftH()
-        HJz, Lines, Orders = self.__MakeJLines()
-        Connect, Jconnect, Jpos, JSize, TotalSpinConnect = bfs.getConnections(Lines,Orders,self.MatrixSize,self.TotalSpin)
-        return HShift, HJz, Connect, Jconnect, Jpos, JSize, TotalSpinConnect
+        HShiftFull = self.__MakeShiftH()
+        HJzFull, Lines, Orders = self.__MakeJLines()
+        Connect, JconnectList, JposList, JSizeList, TotalSpinConnect = bfs.getConnections(Lines,Orders,self.MatrixSize,self.TotalSpin)
+
+        Blocks = []
+        for x, Pos in enumerate(Connect):
+            Dim = len(Pos)
+            Jconnect = JconnectList[x]
+            Jpos = JposList[Jconnect]
+            Jval = JSizeList[Jconnect]
+            Shift = HShiftFull[Pos]
+            HJz = HJzFull[Pos]
+            Blocks.append(blockCls(Jpos,Jval,Pos,Shift, HJz,TotalSpinConnect[x]))
+        return Blocks
        
     def __MakeShiftH(self):
         """ Makes the shift Hamiltonian
@@ -223,80 +309,6 @@ class spinSystemCls:
                             Orders.append(order)
                             Lines.append(Val * self.Jmatrix[spin,subspin])
         return HJz, Lines, Orders
-
-    def __GetMatrixSize(self):
-        """
-        Get the full matrix size of the spin system
-
-        Returns
-        -------
-        int:
-            Full matrix size
-        """
-        return 
-
-def MakeH(spinSys, B0, TimeDict):
-    """
-    Make the block diagonal Hamiltonians for each connected block.
-
-    Parameters
-    ----------
-    spinSys: Spin system class
-        The spin system
-    B0: float
-        The B0 field strength in Tesla.
-    TimeDict: dict
-        Dictionary for timing purposes
-
-    Returns
-    -------
-    list of 1D arrays:
-        List of the eigenvalues of each block
-    list of 2D arrays:
-        List of the eigenfunctions of each block
-    """
-    DiagLine = spinSys.HShift * B0 + spinSys.HJz
-    BlocksDiag = []
-    BlocksT = []
-    for x, Pos in enumerate(spinSys.Connect):
-        H = MakeSubH(spinSys,spinSys.Jconnect[x],Pos,DiagLine)
-        tmpTime = time.time()
-        EigVal, T = np.linalg.eigh(H)
-        TimeDict['eig'] += time.time() - tmpTime
-        BlocksDiag.append(EigVal)
-        BlocksT.append(T)
-    return BlocksDiag, BlocksT
-
-def MakeSubH(spinSys,Jconnect,Pos,DiagLine):
-    """
-    Makes the Hamiltonian for a single block.
-
-    Parameters
-    ----------
-    spinSys: Spin system class
-        The spin system
-    Jconnect: ndarray
-        The Jconnections of this block
-    Pos: ndarray
-        Positions of the elements in the full matrix
-    DiagLine: ndarray
-        1D array of the true diagonal (shift + Jz)
-
-    Returns
-    -------
-    ndarray:
-        2D array with the Hamiltonian
-    """
-    Dim = len(Pos)
-    if len(Pos) > 1:
-        Jpos = spinSys.JposList[Jconnect]
-        Jval = spinSys.JSize[Jconnect]
-        #Convert Jpos to new system
-        H = RebaseMatrix(Pos,Jpos,Jval,True)
-    else:
-        H = np.zeros((Dim,Dim))
-    H[range(Dim),range(Dim)] = DiagLine[Pos] #Add diagonal Shift + zpart of J
-    return H
 
 def RebaseMatrix(Pos,Jpos,Jval,makeH):
     """ 
@@ -502,19 +514,21 @@ def getFreqInt(spinSysList, B0, StrongCoupling = True):
     """
     Freq = np.array([])
     Int = np.array([])
-    TimeDict = {'prepare':0, 'connect':0, 'MakeH':0 , 'eig':0, 'FreqInt': 0,'intPrepare':0, 'before':0,'intenGet':0, 'dot':0 }
+    TimeDict = {'prepare':0, 'connect':0, 'MakeH':0 , 'eig':0, 'FreqInt': 0,}
 
     for spinSys in spinSysList:
         spinSys.HighOrder = StrongCoupling
-        tmpTime = time.time()
+        tmptime = time.time()
         spinSys.prepare(TimeDict)
-        TimeDict['prepare'] += time.time() - tmpTime
-        tmpTime = time.time()
-        BlocksDiag, BlocksT = MakeH(spinSys, B0, TimeDict)
-        TimeDict['MakeH'] += time.time() - tmpTime
-        tmpTime = time.time()
-        Ftmp, Itmp = fi.findFreqInt(spinSys, BlocksT, BlocksDiag, TimeDict)
-        TimeDict['FreqInt'] += time.time() - tmpTime
+        TimeDict['prepare'] += time.time()-tmptime
+        tmptime = time.time()
+        for b in spinSys.Blocks:
+            b.setB0(B0)
+            #b.makeH()
+        TimeDict['MakeH'] += time.time()-tmptime
+        tmptime = time.time()
+        Ftmp, Itmp = fi.findFreqInt(spinSys, TimeDict)
+        TimeDict['FreqInt'] += time.time()-tmptime
         Freq = np.append(Freq, Ftmp)
         Int = np.append(Int, Itmp)
     print(TimeDict)
