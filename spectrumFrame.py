@@ -18,18 +18,17 @@
 # along with Jellyfish. If not, see <http://www.gnu.org/licenses/>.
 
 import numpy as np
-import matplotlib.gridspec as gridspec
 try:
     from PyQt5 import QtGui, QtCore, QtWidgets
 except ImportError:
     from PyQt4 import QtGui, QtCore
-    from PyQt4 import QtGui as QtWidgets    
+    from PyQt4 import QtGui as QtWidgets
 
 #########################################################################################################
 # the class from which the 1d data is displayed, the operations which only edit the content of this class are for previewing
 
 
-class Plot1DFrame(object):
+class Plot1DFrame:
 
     def __init__(self, root, fig, canvas):
         self.root = root
@@ -94,13 +93,13 @@ class Plot1DFrame(object):
                 self.xminlim = middle - width / 2.0
                 self.ax.set_xlim(self.xmaxlim, self.xminlim)
             else:
-               if modifiers == QtCore.Qt.ControlModifier:
-                   self.ymaxlim *= 0.6**event.step
-                   self.yminlim *= 0.6**event.step
-               else:
-                   self.ymaxlim *= 0.9**event.step
-                   self.yminlim *= 0.9**event.step
-               self.ax.set_ylim(self.yminlim, self.ymaxlim)
+                if modifiers == QtCore.Qt.ControlModifier:
+                    self.ymaxlim *= 0.6**event.step
+                    self.yminlim *= 0.6**event.step
+                else:
+                    self.ymaxlim *= 0.9**event.step
+                    self.yminlim *= 0.9**event.step
+                self.ax.set_ylim(self.yminlim, self.ymaxlim)
             self.canvas.update()
             self.canvas.draw_idle()
 

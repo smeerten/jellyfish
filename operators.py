@@ -20,7 +20,6 @@
 
 import numpy as np
 
-
 def getSmallIz(I):
     """
     Gets the 1D representation of the Iz operator in Pauli form.
@@ -35,7 +34,7 @@ def getSmallIz(I):
     ndarray:
         1D numpy array with the Iz values
     """
-    return np.linspace(I,-I,I*2+1)
+    return np.linspace(I, -I, I*2+1)
 
 def getLargeIz(SpinList, MatrixSize):
     """
@@ -54,7 +53,7 @@ def getLargeIz(SpinList, MatrixSize):
         1D numpy array with the Iz values
     """
     nSpins = len(SpinList)
-    IzList = np.zeros((nSpins,MatrixSize))
+    IzList = np.zeros((nSpins, MatrixSize))
     for spin in range(nSpins):
         IList = []
         for subspin in range(nSpins):
@@ -62,21 +61,20 @@ def getLargeIz(SpinList, MatrixSize):
                 IList.append(SpinList[subspin].Iz)
             else:
                 IList.append(SpinList[subspin].Ident)
-        IzList[spin,:] = kronList(IList)
+        IzList[spin, :] = kronList(IList)
     return IzList
 
-def getLargeIplus(SpinList,IzList,MatrixSize):
+def getLargeIplus(SpinList, IzList, MatrixSize):
     """
     Get Iplus operator in total spin systems representation.
     This is used for the J-Hamiltonian, as well as for the Ix terms of the detection
     (Ix = 0.5 * (Iplus + Iminus), but only the upper diagonal terms are needed, so
     Ix = 0.5 * Iplus)
-    Also not that Imin = np.flipud(Iplus). This means that by having Iplus, 
+    Also not that Imin = np.flipud(Iplus). This means that by having Iplus,
     we have both Ix,Iy,Iplus and Iminus
 
     Parameters
     ----------
-
     SpinList: list of spinCls objects
         All the spins of the system
     IpList: List of ndarrays
@@ -89,20 +87,19 @@ def getLargeIplus(SpinList,IzList,MatrixSize):
     ndarray:
         1D numpy array with the Iplus values
     """
-    IpList = np.zeros((len(SpinList),MatrixSize))
+    IpList = np.zeros((len(SpinList), MatrixSize))
     orders = []
-    for spin in range(len(SpinList)):
-        orders.append(np.prod([1] + [i.Length for i in SpinList[spin + 1:]]))
+    for spin, _ in enumerate(SpinList):
+        orders.append(np.prod([1] + [i.Length for i in SpinList[spin+1:]]))
         I = SpinList[spin].I
         #The 'sign' appears to be that of the Imin, but answer is correct. Sign inversion leads to
         #very bad results
-        IpList[spin,:] = np.sqrt(I * (I +1) - IzList[spin] * (IzList[spin] - 1))
+        IpList[spin, :] = np.sqrt(I * (I + 1) - IzList[spin] * (IzList[spin] - 1))
     return IpList, orders
 
 def getLargeIpSm(spin, subspin, IpList, Orders):
     """
     Makes 0.5 * Iplus * Sminus line
-
     Returns None, None if the found order is equal to 0
 
     Parameters
@@ -115,8 +112,6 @@ def getLargeIpSm(spin, subspin, IpList, Orders):
         The Iz operator for each spin
     Orders: list
         List of the diagonal orders of each spin
-
-
 
     Returns
     -------
@@ -149,11 +144,10 @@ def kronList(List):
     """
     M = 1
     for element in List:
-        M = np.kron(M , element)
+        M = np.kron(M, element)
     return M
 
-
-def getDetectRho(SpinList,IpList,Orders):
+def getDetectRho(SpinList, IpList, Orders):
     """
     Makes Detect and RhoZero lines for all spins together.
     Adds to detect only if the spin is detected
@@ -186,17 +180,16 @@ def getDetectRho(SpinList,IpList,Orders):
     if DetectAll: #If all detcted, use fast routine
         #Rho and Detect are equal (with a factor), and only Rho is calculated and used
         Detect = None
-    for spin in range(len(SpinList)):
-        IxLine =  0.5 * IpList[spin][:-Orders[spin]] #Make the Ix line. 
-        RhoZero = np.append(RhoZero,IxLine)
-        RowPos = np.append(RowPos,np.arange(len(IxLine))) #Row position of elements
-        ColPos = np.append(ColPos,np.arange(len(IxLine)) + Orders[spin]) #Column position of elements
+    for spin, _ in enumerate(SpinList):
+        IxLine = 0.5 * IpList[spin][:-Orders[spin]] #Make the Ix line.
+        RhoZero = np.append(RhoZero, IxLine)
+        RowPos = np.append(RowPos, np.arange(len(IxLine))) #Row position of elements
+        ColPos = np.append(ColPos, np.arange(len(IxLine)) + Orders[spin]) #Column position of elements
         if not DetectAll:
             if SpinList[spin].Detect: #Add to detection
-                Detect = np.append(Detect,IxLine * 2)#Factor 2 because Iplus = 2 * Ix
+                Detect = np.append(Detect, IxLine*2) #Factor 2 because Iplus = 2 * Ix
             else:
-                Detect = np.append(Detect,IxLine * 0)
-
+                Detect = np.append(Detect, IxLine*0)
     #Filter for zero elements
     UsedElem = np.where(RhoZero != 0.0)
     RhoZero = RhoZero[UsedElem]
@@ -204,4 +197,4 @@ def getDetectRho(SpinList,IpList,Orders):
     ColPos = ColPos[UsedElem]
     if not DetectAll:
         Detect = Detect[UsedElem]
-    return Detect, RhoZero, RowPos, ColPos 
+    return Detect, RhoZero, RowPos, ColPos

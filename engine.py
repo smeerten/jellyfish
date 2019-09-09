@@ -19,10 +19,10 @@
 # along with Jellyfish. If not, see <http://www.gnu.org/licenses/>.
 
 import os
-import numpy as np
 import time
-from itertools import permutations
 import sys
+from itertools import permutations
+import numpy as np
 import operators as op
 import BFS as bfs
 import CPM as cpm
@@ -30,11 +30,11 @@ import FreqInt as fi
 
 GAMMASCALE = 42.577469 / 100
 isoPath = os.path.dirname(os.path.realpath(__file__)) + os.path.sep + "IsotopeProperties"
-if sys.version_info < (3,):  
+if sys.version_info < (3,):
     with open(isoPath) as isoFile:
         isoList = [line.strip().split('\t') for line in isoFile]
 else:
-    with open(isoPath, encoding = 'UTF-8') as isoFile:
+    with open(isoPath, encoding='UTF-8') as isoFile:
         isoList = [line.strip().split('\t') for line in isoFile]
 isoList = isoList[1:]
 ABBREVLIST = []
@@ -43,7 +43,7 @@ FREQRATIOLIST = []
 
 for isoN in isoList:
     if isoN[3] != '-' and isoN[4] != '-' and isoN[8] != '-':
-        ABBREVLIST.append( str(int(isoN[3])) + isoN[1])
+        ABBREVLIST.append(str(int(isoN[3])) + isoN[1])
         SPINLIST.append(float(isoN[4]))
         FREQRATIOLIST.append(float(isoN[8]))
 
@@ -53,9 +53,8 @@ class spinCls:
        shift: its shift in ppm
        Detect: a bool, which states True if the spin should be detected later on
        Ioverwrite: if not None, use this value instead of the SpinQuantum value from the list (needed for CPM)
-    
     """
-    def __init__(self, Nucleus, shift, Detect, Ioverwrite = None):
+    def __init__(self, Nucleus, shift, Detect, Ioverwrite=None):
         self.index = ABBREVLIST.index(Nucleus)
         if Ioverwrite is not None:
             self.I = Ioverwrite
@@ -68,29 +67,27 @@ class spinCls:
         self.Length = int(self.I * 2 + 1)
         self.Ident = np.ones(self.Length)
 
-    def __eq__(self,other):
-        if isinstance(other,spinCls):
-            if self.index != other.index:
-                return False
-            if self.I != other.I:
-                return False
-            if self.shift != other.shift:
-                return False
-            if self.Detect != other.Detect:
-                return False
-            return True
-        else:
+    def __eq__(self, other):
+        if not isinstance(other, spinCls):
             return NotImplemented
+        if self.index != other.index:
+            return False
+        if self.I != other.I:
+            return False
+        if self.shift != other.shift:
+            return False
+        if self.Detect != other.Detect:
+            return False
+        return True
 
 
 class blockCls:
     """
     Hold the information for a single block of the Hamiltonian
-
     Constructs the Hamiltonian and solves the eigenvector problem when
     the eigenvectors or eigenvalues are asked.
     """
-    def __init__(self, Jpos,Jval,Pos,Shift,Hjz,TotalSpin):
+    def __init__(self, Jpos, Jval, Pos, Shift, Hjz, TotalSpin):
         """
         Parameters
         ----------
@@ -122,15 +119,15 @@ class blockCls:
         """
         dim = len(self.Pos)
         if dim > 1:
-            H = RebaseMatrix(self.Pos,self.Jpos,self.Jval,True)
+            H = RebaseMatrix(self.Pos, self.Jpos, self.Jval, True)
         else:
-            H = np.zeros((dim,dim))
-        H[range(dim),range(dim)] = self.Shift * self.B0 + self.Hjz #Add diagonal Shift + zpart of J
+            H = np.zeros((dim, dim))
+        H[range(dim), range(dim)] = self.Shift * self.B0 + self.Hjz # Add diagonal Shift + zpart of J
         EigVal, T = np.linalg.eigh(H)
         self.Eig = EigVal
         self.T = T
 
-    def setB0(self,B0):
+    def setB0(self, B0):
         """
         Set the magnetic field strength (B0)
 
@@ -170,16 +167,14 @@ class blockCls:
         return self.Eig
 
 
-
 class spinSystemCls:
     """ Class that holds a single spinsystem
         The init sets all the properties of the spinsys. Calculation of the more `expensive'
         parts is done in 'prepare'. Splitting this from the init
         allows for comparison of spinSystemCls instances before these calculations.
     """
-    def __init__(self, SpinList, Jmatrix, Scaling = 1, HighOrder = True):
+    def __init__(self, SpinList, Jmatrix, Scaling=1, HighOrder=True):
         """
-        
         Parameters
         ----------
         SpinList: list of spinCls elements
@@ -198,52 +193,41 @@ class spinSystemCls:
         self.Scaling = Scaling
         self.MatrixSize = np.prod([1] + [i.Length for i in self.SpinList])
 
-    def __eq__(self,other):
+    def __eq__(self, other):
         #Ordering of the spins is not considered (as it is of no relevance)
-        if isinstance(other,spinSystemCls):
-            if self.nSpins != other.nSpins:
-                return False
-
-            if self.MatrixSize != other.MatrixSize:
-                return False
-
-            if self.HighOrder != other.HighOrder:
-                return False
-
-            #Every spin must have at least one identical mate in other
-            spinEqual = [] #A list of list that holds the == of each spin against otherSpin
-            for spin in self.SpinList:
-                spinEqual.append([spin == spin2 for spin2 in other.SpinList])
-
-            if not all([any(x) for x in spinEqual]): #All spins must have at least 1 equal in other
-                return False
-            
+        if not isinstance(other, spinSystemCls):
+            return NotImplemented
+        if (self.nSpins != other.nSpins) or (self.MatrixSize != other.MatrixSize) or (self.HighOrder != other.HighOrder):
+            return False
+        #Every spin must have at least one identical mate in other
+        spinEqual = [] #A list of list that holds the == of each spin against otherSpin
+        for spin in self.SpinList:
+            spinEqual.append([spin == spin2 for spin2 in other.SpinList])
+        if all([any(x) for x in spinEqual]): #All spins must have at least 1 equal in other
             for x in permutations(range(self.nSpins)): #Try all possible orderings of the spins
                 #permutation is only valid if all the spins are at a True position in the spinEqual listlist
                 bl = all([spinEqual[val][pos] for pos, val in enumerate(x)])
                 if bl: #If all spins equal, rebuild the Jmatrix, and see if this is also a match
                     jtmp = np.triu(np.array(self.Jmatrix))
                     jtmp = jtmp + np.transpose(jtmp) #add transpose, as cutting J in parts might lead to a flip (i.e. ordering might be lost)
-                    jtmp = jtmp[x,:]
-                    jtmp = jtmp[:,x]
-                    if np.allclose(np.triu(jtmp),other.Jmatrix):
+                    jtmp = jtmp[x, :]
+                    jtmp = jtmp[:, x]
+                    if np.allclose(np.triu(jtmp), other.Jmatrix):
                         return True
-            return False
-        else:
-            return NotImplemented
+        return False
 
-    def prepare(self,TimeDict):
+    def prepare(self, TimeDict):
         """
-        Calculate the more involved elements. 
+        Calculate the more involved elements.
 
         Parameters:
         TimeDict: dict
             Dict for timekeeping purposes.
         """
         self.IzList = op.getLargeIz(self.SpinList, self.MatrixSize)
-        self.TotalSpin = np.sum(self.IzList,0) #For total spin factorization
-        self.IpList, self.Orders = op.getLargeIplus(self.SpinList,self.IzList,self.MatrixSize)
-        self.Detect, self.RhoZero, self.DPos1, self.DPos2 = op.getDetectRho(self.SpinList,self.IpList,self.Orders)
+        self.TotalSpin = np.sum(self.IzList, 0) #For total spin factorization
+        self.IpList, self.Orders = op.getLargeIplus(self.SpinList, self.IzList, self.MatrixSize)
+        self.Detect, self.RhoZero, self.DPos1, self.DPos2 = op.getDetectRho(self.SpinList, self.IpList, self.Orders)
         tmpTime = time.time()
         self.Blocks = self.__prepareH()
         TimeDict['connect'] += time.time() - tmpTime
@@ -260,27 +244,26 @@ class spinSystemCls:
         """
         HShiftFull = self.__MakeShiftH()
         HJzFull, Lines, Orders = self.__MakeJLines()
-        Connect, JconnectList, JposList, JSizeList, TotalSpinConnect = bfs.getConnections(Lines,Orders,self.MatrixSize,self.TotalSpin)
-
+        Connect, JconnectList, JposList, JSizeList, TotalSpinConnect = bfs.getConnections(Lines, Orders, self.MatrixSize, self.TotalSpin)
         Blocks = []
         for x, Pos in enumerate(Connect):
-            Dim = len(Pos)
             Jconnect = JconnectList[x]
             Jpos = JposList[Jconnect]
             Jval = JSizeList[Jconnect]
             Shift = HShiftFull[Pos]
             HJz = HJzFull[Pos]
-            Blocks.append(blockCls(Jpos,Jval,Pos,Shift, HJz,TotalSpinConnect[x]))
+            Blocks.append(blockCls(Jpos, Jval, Pos, Shift, HJz, TotalSpinConnect[x]))
         return Blocks
-       
+
     def __MakeShiftH(self):
-        """ Makes the shift Hamiltonian
-            Output is an array with self.MatrixSize which is the diagonal of the Hshift matrix
-            (only diagonal is populated).
+        """
+        Makes the shift Hamiltonian
+        Output is an array with self.MatrixSize which is the diagonal of the Hshift matrix
+        (only diagonal is populated).
         """
         HShift = np.zeros(self.MatrixSize)
         for spin in range(self.nSpins):
-            HShift +=  (self.SpinList[spin].shift * 1e-6 + 1) * self.SpinList[spin].Gamma * self.IzList[spin] 
+            HShift += (self.SpinList[spin].shift * 1e-6 + 1) * self.SpinList[spin].Gamma * self.IzList[spin]
         return HShift
 
     def __MakeJLines(self):
@@ -294,24 +277,24 @@ class spinSystemCls:
         list of ndarrays:
             List of 1D arrays with the values of a specific off-diagonal line
         list of ints:
-            Diagonal orders of each line 
+            Diagonal orders of each line
         """
         Lines = []
         Orders = []
         HJz = np.zeros(self.MatrixSize)
         for spin in range(self.nSpins):
-            for subspin in range(spin,self.nSpins):
-                if self.Jmatrix[spin,subspin] != 0:
-                    HJz += self.IzList[spin] * self.IzList[subspin] * self.Jmatrix[spin,subspin]
+            for subspin in range(spin, self.nSpins):
+                if self.Jmatrix[spin, subspin] != 0:
+                    HJz += self.IzList[spin] * self.IzList[subspin] * self.Jmatrix[spin, subspin]
                     if self.HighOrder:
                         Val, order = op.getLargeIpSm(spin, subspin, self.IpList, self.Orders)
                         if Val is not None:
                             Orders.append(order)
-                            Lines.append(Val * self.Jmatrix[spin,subspin])
+                            Lines.append(Val * self.Jmatrix[spin, subspin])
         return HJz, Lines, Orders
 
-def RebaseMatrix(Pos,Jpos,Jval,makeH):
-    """ 
+def RebaseMatrix(Pos, Jpos, Jval, makeH):
+    """
     Makes a matrix (Hamiltonian) from an input list of off-diagonal elements
 
     Parameters
@@ -332,19 +315,18 @@ def RebaseMatrix(Pos,Jpos,Jval,makeH):
     """
     Dim = len(Pos)
     #Convert the state numbers to the new representation (i.e. 0,1,2,3...)
-    idx = np.searchsorted(Pos,Jpos)
+    idx = np.searchsorted(Pos, Jpos)
     to_values = np.arange(Dim)
     out = to_values[idx] #Off diagonal term positions in new frame
     if makeH:
         #Make H
-        H = np.zeros((Dim,Dim))
-        H[out[:,1],out[:,0]] = Jval #Set off diagonal terms
-        #H[out[:,0],out[:,1]] = Jval #Positions are sorted, so this line should not be needed
+        H = np.zeros((Dim, Dim))
+        H[out[:, 1], out[:, 0]] = Jval #Set off diagonal terms
+        #H[out[:, 0], out[:, 1]] = Jval #Positions are sorted, so this line should not be needed
         return H
-    else:
-        return out
+    return out
 
-def MakeSpectrum(Intensities, Frequencies, AxisLimits, RefFreq,LineBroadening,NumPoints):
+def MakeSpectrum(Intensities, Frequencies, AxisLimits, RefFreq, LineBroadening, NumPoints):
     """
     Makes a spectrum of the supplied intensity and frequency lists.
     Uses the histogram function to do this. This is fast, and accurate if enough
@@ -376,16 +358,16 @@ def MakeSpectrum(Intensities, Frequencies, AxisLimits, RefFreq,LineBroadening,Nu
     sw = Limits[1] - Limits[0]
     dw = 1.0/ sw
     lb = LineBroadening * np.pi
-    Frequencies -= abs(RefFreq)
+    shiftFreq = Frequencies - abs(RefFreq)
     #Make spectrum
-    Spectrum, Axis = np.histogram(Frequencies, int(NumPoints), Limits , weights = Intensities)
+    Spectrum, Axis = np.histogram(shiftFreq, int(NumPoints), Limits, weights=Intensities)
     if np.sum(np.isnan(Spectrum)):
         Spectrum = np.zeros_like(Axis)
     elif np.max(Spectrum) == 0.0:
         pass
     else:
         Fid = np.fft.ifft(np.fft.ifftshift(Spectrum))
-        TimeAxis = np.linspace(0,NumPoints-1,NumPoints) * dw
+        TimeAxis = np.linspace(0, NumPoints-1, NumPoints) * dw
         window = np.exp(-TimeAxis * lb)
         window[-1:-(int(len(TimeAxis) / 2) + 1):-1] = window[:int(len(TimeAxis) / 2)]
         Fid *= window
@@ -415,23 +397,20 @@ def getIsolateSys(spinList, Jmatrix):
     """
     Pos1, Pos2 = np.where(Jmatrix != 0.0)
     Length = len(spinList)
-
-    Adj = np.ones((Length,len(Pos1)*2),dtype = int) * np.arange(Length)[:,np.newaxis]
-    for x in range(len(Pos1)):
-        Adj[Pos1[x],x * 2] = Pos2[x]
-        Adj[Pos2[x],x * 2 + 1] = Pos1[x]
-    
+    Adj = np.ones((Length, len(Pos1)*2), dtype=int) * np.arange(Length)[:, np.newaxis]
+    for x, _ in enumerate(Pos1):
+        Adj[Pos1[x], x*2] = Pos2[x]
+        Adj[Pos2[x], x*2+1] = Pos1[x]
     #Do a connection search (bfs) for all elements
     Connect = bfs.connectionSearch(Adj)
-
     isoSpins = []
     for con in Connect:
         spinTemp = [spinList[x] for x in con]
         jtmp = np.triu(Jmatrix)
         jtmp = jtmp + np.transpose(jtmp)
-        jtmp = jtmp[con,:]
-        jtmp = jtmp[:,con]
-        isoSpins.append([spinTemp,np.triu(jtmp)])
+        jtmp = jtmp[con, :]
+        jtmp = jtmp[:, con]
+        isoSpins.append([spinTemp, np.triu(jtmp)])
     return isoSpins
 
 def reduceSpinSys(spinSysList):
@@ -460,9 +439,9 @@ def reduceSpinSys(spinSysList):
             uniqueSys.append(elem)
     return uniqueSys
 
-def expandSpinsys(spinList,Jmatrix):
-    """ 
-    Creates a list of spinsystems from the input of spin information and 
+def expandSpinsys(spinList, Jmatrix):
+    """
+    Creates a list of spinsystems from the input of spin information and
     J-coupling matrix. Separates into isolated systems that have no J-coupling
     between them (if any). Uses Composite Particle Model to split these systems further.
     The resulting systems are compared to check if there are duplicates.
@@ -481,18 +460,16 @@ def expandSpinsys(spinList,Jmatrix):
     """
     #Get isolated parts
     isoSys = getIsolateSys(spinList, Jmatrix)
-    
     #Do CPM for each isolated spinsys
     spinSysList = []
     for elem in isoSys:
-        spinSysList.extend(cpm.performCPM(elem[0],elem[1]))
-
+        spinSysList.extend(cpm.performCPM(elem[0], elem[1]))
     #remove duplicates
     spinSysList = reduceSpinSys(spinSysList)
     return spinSysList
 
-def getFreqInt(spinSysList, B0, StrongCoupling = True):
-    """ 
+def getFreqInt(spinSysList, B0, StrongCoupling=True):
+    """
     Calculates the frequencies and intensities of all transition
     of all the spin systems, for the given magnetic field strength.
 
@@ -514,27 +491,26 @@ def getFreqInt(spinSysList, B0, StrongCoupling = True):
     """
     Freq = np.array([])
     Int = np.array([])
-    TimeDict = {'prepare':0, 'connect':0, 'MakeH':0 , 'eig':0, 'FreqInt': 0,}
-
+    TimeDict = {'prepare':0, 'connect':0, 'MakeH':0, 'eig':0, 'FreqInt': 0}
     for spinSys in spinSysList:
         spinSys.HighOrder = StrongCoupling
         tmptime = time.time()
         spinSys.prepare(TimeDict)
-        TimeDict['prepare'] += time.time()-tmptime
+        TimeDict['prepare'] += time.time() - tmptime
         tmptime = time.time()
         for b in spinSys.Blocks:
             b.setB0(B0)
             #b.makeH()
-        TimeDict['MakeH'] += time.time()-tmptime
+        TimeDict['MakeH'] += time.time() - tmptime
         tmptime = time.time()
         Ftmp, Itmp = fi.findFreqInt(spinSys, TimeDict)
-        TimeDict['FreqInt'] += time.time()-tmptime
+        TimeDict['FreqInt'] += time.time() - tmptime
         Freq = np.append(Freq, Ftmp)
         Int = np.append(Int, Itmp)
     print(TimeDict)
     return Freq, Int
 
-def saveSimpsonFile(data,limits,ref,location):
+def saveSimpsonFile(data, limits, ref, location):
     """
     Save spectrum in SIMPSON file format.
 
@@ -560,7 +536,7 @@ def saveSimpsonFile(data,limits,ref,location):
             f.write(str(Line.real) + ' ' + str(Line.imag) + '\n')
         f.write('END')
 
-def saveMatlabFile(data,limits,ref,axis,location):
+def saveMatlabFile(data, limits, ref, axis, location):
     """
     Save spectrum in SIMPSON file format.
 
@@ -590,7 +566,6 @@ def saveMatlabFile(data,limits,ref,axis,location):
     struct['wholeEcho'] = [True]
     struct['ref'] = np.array([ref], dtype=np.float)
     struct['history'] = []
-
     struct['xaxArray'] = axis * ref * 1e-6
     matlabStruct = {'Jellyfish': struct}
     scipy.io.savemat(location, matlabStruct)

@@ -20,11 +20,9 @@
 
 import numpy as np
 import engine as en
-import time
-
 
 def findFreqInt(spinSys, TimeDict):
-    """ 
+    """
     Get all the frequencies and intensities for the spin system.
 
     Parameters
@@ -48,12 +46,11 @@ def findFreqInt(spinSys, TimeDict):
     EasyDetect = True
     if spinSys.Detect is not None:
         EasyDetect = False
-
     pos1Needed = []
     pos2Needed = []
     rhoNeeded = []
     detectNeeded = []
-    for Block in (spinSys.Blocks):
+    for Block in spinSys.Blocks:
         Rows = Block.Pos
         RowPos = np.in1d(spinSys.DPos1, Rows)
         pos1Needed.append(spinSys.DPos1[RowPos])
@@ -61,7 +58,6 @@ def findFreqInt(spinSys, TimeDict):
         rhoNeeded.append(spinSys.RhoZero[RowPos])
         if not EasyDetect:
             detectNeeded.append(spinSys.Detect[RowPos])
-
     Inten = np.array([])
     Freq = np.array([])
     for index, Block1 in enumerate(spinSys.Blocks):
@@ -85,25 +81,21 @@ def findFreqInt(spinSys, TimeDict):
             RowNeed = pos1Needed[index][ColPos]
             RhoElem = rhoNeeded[index][ColPos]
             DetectElem = None
-            if not EasyDetect: 
+            if not EasyDetect:
                 DetectElem = detectNeeded[index][ColPos]
                 if not np.any(DetectElem): #Skip if detect is empty
                     continue
-
             ##Convert to new system
-            ColOut = en.RebaseMatrix(Cols,ColNeed,None,False)
-            RowOut = en.RebaseMatrix(Rows,RowNeed,None,False)
-
-            propMat = getProp(EasyDetect,RowOut,ColOut,RhoElem,DetectElem,Block1.getT(),Block2.getT())
-
+            ColOut = en.RebaseMatrix(Cols, ColNeed, None, False)
+            RowOut = en.RebaseMatrix(Rows, RowNeed, None, False)
+            propMat = getProp(EasyDetect, RowOut, ColOut, RhoElem, DetectElem, Block1.getT(), Block2.getT())
             #Get intensity and frequency of relevant elements
-            Pos = np.where(propMat > 1e-9) 
+            Pos = np.where(propMat > 1e-9)
             Inten = np.append(Inten, propMat[Pos].flatten())
             Freq = np.append(Freq, Block1.getEig()[Pos[0]] - Block2.getEig()[Pos[1]])
     return  Freq, Inten * spinSys.Scaling
 
-
-def getProp(EasyDetect,RowOut,ColOut,RhoElem,DetectElem,T1,T2):
+def getProp(EasyDetect, RowOut, ColOut, RhoElem, DetectElem, T1, T2):
     """
     Get probability matrix (i.e. matrix of transition intensities)
 
@@ -130,24 +122,21 @@ def getProp(EasyDetect,RowOut,ColOut,RhoElem,DetectElem,T1,T2):
         Transformed matrix
 
     """
-    Size = [T1.shape[0],T2.shape[1]]
+    Size = [T1.shape[0], T2.shape[1]]
     RhoZeroMat = np.zeros(Size)
-    RhoZeroMat[RowOut,ColOut] = RhoElem
-
+    RhoZeroMat[RowOut, ColOut] = RhoElem
     #Transform to detection frame
-    RhoZeroMat = transfromMat(T1,T2,RhoZeroMat)
-
-    if not EasyDetect: 
+    RhoZeroMat = transfromMat(T1, T2, RhoZeroMat)
+    if not EasyDetect:
         DetectMat = np.zeros_like(RhoZeroMat)
-        DetectMat[RowOut,ColOut] = DetectElem
-        DetectMat = transfromMat(T1,T2,DetectMat)
+        DetectMat[RowOut, ColOut] = DetectElem
+        DetectMat = transfromMat(T1, T2, DetectMat)
         RhoZeroMat *= DetectMat
     else:
         RhoZeroMat *= RhoZeroMat * 2 #Else Detect is equal to 2 * RhoZero
-
     return RhoZeroMat
 
-def transfromMat(T1,T2,Mat):
+def transfromMat(T1, T2, Mat):
     """
     Transform matrix to new frame
 
@@ -166,5 +155,4 @@ def transfromMat(T1,T2,Mat):
         Transformed matrix
     """
     #Equal to: np.dot(np.transpose(a),np.dot(b,a))
-    return np.einsum('ij,jk',np.transpose(T1),np.einsum('ij,jk',Mat,T2))
-
+    return np.einsum('ij,jk', np.transpose(T1), np.einsum('ij,jk', Mat, T2))

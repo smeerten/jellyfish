@@ -21,7 +21,7 @@
 import numpy as np
 
 
-def getConnections(Lines,Orders,MatrixSize,TotalSpin):
+def getConnections(Lines, Orders, MatrixSize, TotalSpin):
     """
     Gets the connected parts of the Hamiltonian (i.e. the blocks).
 
@@ -49,7 +49,7 @@ def getConnections(Lines,Orders,MatrixSize,TotalSpin):
     list:
         Total spin quantum number of each group
     """
-    JSizeList =  np.array([])
+    JSizeList = np.array([])
     Pos1 = []
     Pos2 = []
     #For all lines, get the row (Pos1) and column (Pos2) for each non-zero element
@@ -58,42 +58,37 @@ def getConnections(Lines,Orders,MatrixSize,TotalSpin):
         Pos1.append(posList)
         Pos2.append(posList + Orders[pos])
         JSizeList = np.append(JSizeList, elem[posList])
-
     totlen = int(np.sum([len(x) for x in Pos1]))
-    Positions = np.zeros((totlen,2),dtype = int)
+    Positions = np.zeros((totlen, 2), dtype=int)
     start = 0
     #For all elements in Pos1 en Pos2, put in full Nx2 matrix
-    for x in range(len(Pos1)):
+    for x, _ in enumerate(Pos1):
         n = len(Pos1[x])
-        Positions[start:start + n,0] = Pos1[x]
-        Positions[start:start + n,1] = Pos2[x]
-        start +=n
-
+        Positions[start:start+n, 0] = Pos1[x]
+        Positions[start:start+n, 1] = Pos2[x]
+        start += n
     #Always have itself in, so all unused positions will not interfere
     #Adj has twice the positions as Pos1, as we also need the inverse to be saved
-    Adj = np.ones((MatrixSize,len(Pos1)*2),dtype = int) * np.arange(MatrixSize)[:,np.newaxis]
+    Adj = np.ones((MatrixSize, len(Pos1)*2), dtype=int) * np.arange(MatrixSize)[:, np.newaxis]
     start = 0
-    Jpos = -1 * np.ones((MatrixSize,len(Pos1)),dtype = int) #Start with -1, filter later 
-    for x in range(len(Pos1)):
+    Jpos = -1 * np.ones((MatrixSize, len(Pos1)), dtype=int) #Start with -1, filter later
+    for x, _ in enumerate(Pos1):
         n = len(Pos1[x])
-        Adj[Pos1[x],x * 2] = Pos2[x]
+        Adj[Pos1[x], x*2] = Pos2[x]
         #Also save inverse coupling
-        Adj[Pos2[x],x * 2 + 1] = Pos1[x]
-        Jpos[Pos1[x],x] = np.arange(n) + start
-        start +=n
-    
+        Adj[Pos2[x], x*2+1] = Pos1[x]
+        Jpos[Pos1[x], x] = np.arange(n) + start
+        start += n
     #Do a connection search (bfs) for all elements
     Connect = connectionSearch(Adj)
-
     #Get, for all connected element, the specific Jcoupling positions
     Jconnect = []
     TotalSpinConnect = []
     for x in Connect:
-        tmp = Jpos[x,:]
+        tmp = Jpos[x, :]
         tmp = tmp[np.where(tmp != -1)]
         Jconnect.append(tmp)
         TotalSpinConnect.append(TotalSpin[x[0]])
-    
     return Connect, Jconnect, Positions, JSizeList, TotalSpinConnect
 
 def connectionSearch(Adj):
@@ -105,7 +100,7 @@ def connectionSearch(Adj):
     Adj: ndarray
         Array of MatrixSize x (2 * LineElements). For each element, holds
         the index of all elements it has a cross-term with
-        
+
     Returns
     -------
     list of lists:
@@ -131,7 +126,7 @@ def bfs(Adj, start):
         the index of all elements it has a cross-term with
     start: int
         Start the search with this element
-        
+
     Returns
     -------
     list:
@@ -147,7 +142,5 @@ def bfs(Adj, start):
             if v not in seen:
                 Connect.append(v)
                 seen.add(v)
-                nextlevel.update(Adj[v,:])
+                nextlevel.update(Adj[v, :])
     return Connect
-
-
