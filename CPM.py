@@ -1,7 +1,7 @@
- #!/usr/bin/env python
+ #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-# Copyright 2019 Wouter Franssen and Bas van Meerten
+# Copyright 2017-2021 Wouter Franssen and Bas van Meerten
 
 # This file is part of Jellyfish.
 #

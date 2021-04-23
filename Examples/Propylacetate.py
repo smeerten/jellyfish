@@ -36,6 +36,6 @@ en.saveMatlabFile(Spectrum,Limits,RefFreq,Axis,'propylacetate500.mat')
 #Low field
 RefFreq = 43e6
 B0 = RefFreq/Base
-Freq, Int = en.getFreqInt(spinSysList, B0, RefFreq, StrongCoupling)
+Freq, Int = en.getFreqInt(spinSysList, B0, StrongCoupling)
 Spectrum, Axis, RefFreq = en.MakeSpectrum(Int, Freq, Limits, RefFreq,Lb,NumPoints)
 en.saveMatlabFile(Spectrum,Limits,RefFreq,Axis,'propylacetate43.mat')

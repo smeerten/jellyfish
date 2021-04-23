@@ -1,7 +1,7 @@
- #!/usr/bin/env python
+ #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-# Copyright 2019 Wouter Franssen and Bas van Meerten
+# Copyright 2017-2021 Wouter Franssen and Bas van Meerten
 
 # This file is part of Jellyfish.
 #
@@ -34,7 +34,7 @@ def getSmallIz(I):
     ndarray:
         1D numpy array with the Iz values
     """
-    return np.linspace(I, -I, I*2+1)
+    return np.linspace(I, -I, int(I*2)+1)
 
 def getLargeIz(SpinList, MatrixSize):
     """

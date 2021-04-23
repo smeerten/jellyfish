@@ -7,17 +7,17 @@ Requirements
 ------------
 
 Jellyfish requires:
-- [python](http://python.org/download/) >= 2.7 or [python](http://python.org/download/) >= 3.4
+- [python](http://python.org/download/) >= 3.4
 
 And the following python packages are required[1]:
 - [numpy](http://sourceforge.net/projects/numpy/files/NumPy/) >= 1.8.2
 - [matplotlib](http://matplotlib.org/) >= 1.4.2
 - [scipy](http://sourceforge.net/projects/scipy/files/scipy/) >= 0.14.1
-- [PyQt4](http://www.riverbankcomputing.com/software/pyqt/download) >= 4.11.4
+- [PyQt5](http://www.riverbankcomputing.com/software/pyqt/download) >= 5.15.0
 
 On Ubuntu and Debian these packages can be installed using the package manager:
 ```
-sudo apt-get install python python-numpy python-matplotlib python-scipy python-qt4
+sudo apt-get install python3 python3-numpy python3-matplotlib python3-scipy python3-pyqt5
 ```
 
 On Windows these packages can easily be installed by downloading [Anaconda](http://continuum.io/downloads).

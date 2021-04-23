@@ -1,7 +1,7 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-# Copyright 2017 Wouter Franssen and Bas van Meerten
+# Copyright 2017-2021 Wouter Franssen and Bas van Meerten
 
 # This file is part of Jellyfish.
 #
@@ -19,24 +19,12 @@
 # along with Jellyfish. If not, see <http://www.gnu.org/licenses/>.
 
 import os
-import sip
 import sys
 import numpy as np
-sip.setapi('QString', 2)
-try:
-    from PyQt5 import QtGui, QtCore, QtWidgets
-    QT = 5
-except ImportError:
-    from PyQt4 import QtGui, QtCore
-    from PyQt4 import QtGui as QtWidgets
-    QT = 4
+from PyQt5 import QtGui, QtCore, QtWidgets
 import matplotlib
-if QT == 4:
-    matplotlib.use('Qt4Agg')
-    from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
-else:
-    matplotlib.use('Qt5Agg')
-    from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+matplotlib.use('Qt5Agg')
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from spectrumFrame import Plot1DFrame
 import engine as en
