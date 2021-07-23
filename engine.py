@@ -538,7 +538,7 @@ def saveSimpsonFile(data, limits, ref, location):
 
 def saveMatlabFile(data, limits, ref, axis, location):
     """
-    Save spectrum in SIMPSON file format.
+    Save spectrum in ssNake Matlab file format.
 
     Parameters
     ----------
