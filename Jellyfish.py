@@ -256,14 +256,14 @@ class SpinsysFrame(QtWidgets.QWidget):
                 if dialog.type == 0: #If B0
                     self.sliderWidgets['Slider'][-1].valueChanged.connect(self.setB0)
                     self.sliderWidgets['Label'].append(QtWidgets.QLabel('B<sub>0</sub>:'))
-                    self.sliderWidgets['Slider'][-1].setValue(self.father.B0*NSTEPS)
+                    self.sliderWidgets['Slider'][-1].setValue(int(self.father.B0*NSTEPS))
                     self.sliderTypes['Spins'].append([None])
                     self.sliderTypes['Type'].append('B0')
                 if dialog.type == 1: #If shift
                     spin = dialog.spin1
                     self.sliderWidgets['Slider'][-1].valueChanged.connect((lambda n, x: lambda: self.setShift(n, x))(spin, len(self.sliderWidgets['Slider'])))
                     self.sliderWidgets['Label'].append(QtWidgets.QLabel('Shift (#' + str(spin) + ')'))
-                    self.sliderWidgets['Slider'][-1].setValue(safeEval(self.spinSysWidgets['Shift'][spin-1].text()) * NSTEPS)
+                    self.sliderWidgets['Slider'][-1].setValue(int(safeEval(self.spinSysWidgets['Shift'][spin-1].text()) * NSTEPS))
                     self.sliderTypes['Spins'].append([spin])
                     self.sliderTypes['Type'].append('Shift')
                 if dialog.type == 2: #If J
@@ -271,7 +271,7 @@ class SpinsysFrame(QtWidgets.QWidget):
                     spin2 = dialog.spin2
                     self.sliderWidgets['Slider'][-1].valueChanged.connect((lambda n, m, x: lambda: self.setJ(n, m, x))(spin, spin2, len(self.sliderWidgets['Slider'])))
                     self.sliderWidgets['Label'].append(QtWidgets.QLabel('J (' + str(spin) + ',' + str(spin2) + ')'))
-                    self.sliderWidgets['Slider'][-1].setValue(self.Jmatrix[spin - 1, spin2 - 1] * NSTEPS)
+                    self.sliderWidgets['Slider'][-1].setValue(int(self.Jmatrix[spin - 1, spin2 - 1] * NSTEPS))
                     self.sliderTypes['Spins'].append([spin, spin2])
                     self.sliderTypes['Type'].append('J')
                 self.sliderFrame.addWidget(self.sliderWidgets['Label'][-1], 100 + num, 0)
