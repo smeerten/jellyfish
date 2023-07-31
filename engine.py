@@ -507,7 +507,7 @@ def getFreqInt(spinSysList, B0, StrongCoupling=True):
         TimeDict['FreqInt'] += time.time() - tmptime
         Freq = np.append(Freq, Ftmp)
         Int = np.append(Int, Itmp)
-    print(TimeDict)
+    # print(TimeDict)
     return Freq, Int
 
 def saveSimpsonFile(data, limits, ref, location):
